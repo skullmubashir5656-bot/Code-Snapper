@@ -481,6 +481,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   /* ── 5. Try strategies ── */
   const strategies = isBearer ? ['openai-compat', 'native'] : ['native'];
   let hardAuthError = null;
+  let rateLimitError = null;
 
   for (const model of GEMINI_MODELS) {
     for (const strategy of strategies) {
@@ -523,8 +524,13 @@ app.post('/api/extract', authenticate, async (req, res) => {
         const err = classifyGeminiError(gemRes.status, data);
         console.error(`[CodeSnapper] ✗ ${endpoint}/${model} [${err.type}] ${err.msg}`);
 
-        if (err.type === 'RATE_LIMIT')
-          return res.status(429).json({ error: err.friendly, code: 'RATE_LIMIT' });
+        if (err.type === 'RATE_LIMIT') {
+          console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model…`);
+          rateLimitError = err;
+          // Short 500ms delay to allow burst quota to cool down before trying next model
+          await new Promise(r => setTimeout(r, 500));
+          continue;
+        }
         if (['AUTH_TOKEN_UNSUPPORTED','INVALID_KEY','ACCESS_DENIED'].includes(err.type)) {
           hardAuthError = err; break;
         }
@@ -545,6 +551,13 @@ app.post('/api/extract', authenticate, async (req, res) => {
     console.error(`  ${hardAuthError.type}: ${hardAuthError.msg}`);
     console.error('  Check your environment variables.\n');
     return res.status(401).json({ error: 'The server could not authenticate with Gemini. Please try again later.', code: 'INVALID_API_KEY' });
+  }
+
+  if (rateLimitError) {
+    return res.status(429).json({
+      error: 'Gemini AI is currently experiencing high traffic. Please wait a few seconds and try again.',
+      code:  'RATE_LIMIT',
+    });
   }
 
   return res.status(502).json({

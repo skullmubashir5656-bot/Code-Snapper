@@ -14,7 +14,9 @@ users.json.bak
 
 # Databases
 codesnapper.db
+codesnapper.db*
 *.db
+*.db*
 *.sqlite
 *.sqlite3
 

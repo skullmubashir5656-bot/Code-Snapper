@@ -1303,7 +1303,7 @@ async function runExtraction(croppedDataURL) {
         return;
       }
       if (err.message === 'RATE_LIMIT') {
-        throw new Error('You\'re sending requests too quickly. Please wait a few seconds and try again.');
+        throw new Error('Gemini AI is experiencing temporary high traffic. Please wait a few seconds and try again.');
       }
       if (err.message === 'SERVER_CONFIG_ERROR') {
         throw new Error('The server is not ready yet. Please contact the site administrator.');
