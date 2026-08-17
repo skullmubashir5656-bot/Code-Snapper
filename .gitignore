@@ -1,0 +1,24 @@
+# Environment & Secrets
+.env
+*.env
+
+# Service Account Keys & Secret JSON Downloads
+users.json
+users.json.bak
+*service-account*.json
+*gcp*.json
+*credentials*.json
+*key*.json
+*.json
+!package.json
+
+# Databases
+codesnapper.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Dependencies & Logs
+node_modules/
+*.log
+pnpm-debug.log*

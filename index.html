@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeSnapper — Extract Code from Screenshots Instantly</title>
+  <meta name="description" content="Upload a screenshot of any code and get clean, copy-ready source code in seconds. Powered by AI vision — preserves exact indentation, syntax, and every special character.">
+  <meta property="og:title" content="CodeSnapper — Extract Code from Screenshots">
+  <meta property="og:description" content="AI-powered code extraction from screenshots. Perfect indentation, syntax highlighting, instant copy.">
+  <meta property="og:type" content="website">
+  <meta name="theme-color" content="#7c3aed">
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     HEADER
+══════════════════════════════════════ -->
+<header class="header" role="banner">
+  <div class="container header-inner">
+    <a href="index.html" class="logo" aria-label="CodeSnapper Home">
+      <div class="logo-img">
+        <img src="logo.png" alt="CodeSnapper Logo">
+      </div>
+      <span class="logo-wordmark">CodeSnapper</span>
+    </a>
+
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+      <a href="index.html" class="nav-link active">Extract</a>
+      <a href="about.html" class="nav-link">About</a>
+
+      <!-- Signed-out: sign-in button -->
+      <button class="btn btn-ghost btn-sm nav-signin-btn hidden" id="nav-signin-btn"
+              aria-label="Sign in to your account">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+        Sign in
+      </button>
+
+      <!-- Signed-in: user pill -->
+      <div class="user-pill hidden" id="user-pill" role="status" aria-label="Account status">
+        <span class="user-pill-email" id="user-pill-email"></span>
+        <span class="user-pill-sep" aria-hidden="true">·</span>
+        <span class="user-pill-remaining" id="user-pill-remaining" title="Extractions remaining today"></span>
+        <button class="btn btn-ghost btn-sm user-signout-btn" id="signout-btn"
+                aria-label="Sign out">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:13px;height:13px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign out
+        </button>
+      </div>
+    </nav>
+
+    <button class="menu-toggle" id="menu-toggle-btn" aria-label="Open menu" aria-expanded="false">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- Mobile nav drawer -->
+<div id="mobile-nav" class="mobile-nav hidden" role="navigation" aria-label="Mobile navigation">
+  <div class="mobile-nav-inner">
+    <a href="index.html" class="mobile-nav-link active">Extract</a>
+    <a href="about.html" class="mobile-nav-link">About</a>
+    <div class="mobile-nav-divider"></div>
+    <div class="mobile-nav-auth" id="mobile-nav-auth">
+      <!-- filled by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     HERO / UPLOAD STATE
+══════════════════════════════════════ -->
+<main id="main-content" role="main">
+<div id="hero-panel">
+  <p class="hero-badge">
+    <span class="badge-pulse"></span>
+    AI-Powered · Vision LLM · Zero Storage
+  </p>
+
+  <h1 class="hero-title">
+    Code from screenshots,<br>
+    <span class="grad">perfectly extracted.</span>
+  </h1>
+
+  <p class="hero-subtitle">
+    Drop any code screenshot and get clean, copy-ready source with exact indentation, syntax, and every special character — powered by Gemini Vision.
+  </p>
+
+  <!-- UPLOAD ZONE -->
+  <div id="upload-zone">
+    <div class="upload-area" id="upload-area" role="button" tabindex="0"
+         aria-label="Upload image: click, drag-and-drop, or paste from clipboard">
+      <input type="file" id="file-input" accept="image/*" class="sr-only" aria-label="Choose image file">
+
+      <div class="upload-icon-wrap" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+
+      <p class="upload-title">Drop your code screenshot here</p>
+      <p class="upload-desc">Drag &amp; drop, click to browse, or paste from clipboard</p>
+
+      <div class="upload-divider" aria-hidden="true">
+        <span>or use shortcuts</span>
+      </div>
+
+      <div class="upload-shortcuts" aria-label="Keyboard shortcuts">
+        <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>V</kbd> Paste image</span>
+        <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>O</kbd> Open file</span>
+      </div>
+    </div>
+
+    <div class="upload-meta" aria-label="Upload limits">
+      <span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Max 10 MB
+      </span>
+      <span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Images never stored
+      </span>
+      <span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        PNG · JPG · WEBP · GIF
+      </span>
+    </div>
+
+    <div class="usage-bar-wrap" id="usage-bar-wrap" aria-label="Extraction usage">
+      <p class="usage-text">
+        <span class="count" id="usage-count">0</span> / 25 free extractions used
+      </p>
+      <div class="usage-bar" role="progressbar" aria-valuemin="0" aria-valuemax="25" aria-valuenow="0" id="usage-progress">
+        <div class="usage-bar-fill" id="usage-fill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     APP WORKFLOW SECTION
+══════════════════════════════════════ -->
+<section id="app-section" aria-label="Extraction workflow">
+
+  <!-- ── STATE: CROP SELECTION ── -->
+  <div id="crop-select-panel" class="state-panel hidden" aria-label="Select crop mode">
+    <div class="sec-header">
+      <p class="sec-label">Step 2 of 3</p>
+      <h2 class="sec-title">Choose how to crop</h2>
+      <p class="sec-sub">Select the region of your image containing the code</p>
+    </div>
+
+    <!-- Image preview -->
+    <div class="img-preview-card" id="crop-img-preview-wrap">
+      <img id="crop-preview-img" src="" alt="Uploaded code screenshot">
+      <div class="img-preview-overlay">
+        <button class="btn btn-secondary btn-sm" id="change-img-btn" aria-label="Upload a different image">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Change
+        </button>
+      </div>
+    </div>
+
+    <div class="crop-options" role="group" aria-label="Crop mode options">
+      <!-- Auto Crop -->
+      <div class="crop-card" id="auto-crop-btn" role="button" tabindex="0"
+           aria-label="Auto Crop: AI detects code boundaries automatically">
+        <div class="crop-card-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><path d="M16 2l2 2-2 2"/><path d="M22 2l-2 2 2 2"/></svg>
+        </div>
+        <span class="crop-card-badge badge-rec">✦ Recommended</span>
+        <h3 class="crop-card-title">Auto Crop</h3>
+        <p class="crop-card-desc">AI detects the code block boundary, adds generous padding, and shows an editable preview before extraction.</p>
+      </div>
+
+      <!-- Manual Crop -->
+      <div class="crop-card" id="manual-crop-btn" role="button" tabindex="0"
+           aria-label="Manual Crop: drag to select the exact region">
+        <div class="crop-card-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+        </div>
+        <span class="crop-card-badge badge-prec">Precision</span>
+        <h3 class="crop-card-title">Manual Crop</h3>
+        <p class="crop-card-desc">Drag to select the exact region. Zoom &amp; pan controls for pixel-perfect precision on dense screenshots.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STATE: AUTO CROP PREVIEW ── -->
+  <div id="auto-crop-panel" class="state-panel hidden" aria-label="Auto crop preview">
+    <div class="sec-header">
+      <p class="sec-label">Step 2 of 3 · Auto Crop</p>
+      <h2 class="sec-title">Adjust the detected region</h2>
+      <p class="sec-sub">Drag the handles to fine-tune the crop. Green overlay = selected code area.</p>
+    </div>
+
+    <div class="crop-canvas-wrap">
+      <canvas id="auto-crop-canvas" aria-label="Auto crop preview canvas"></canvas>
+    </div>
+
+    <div class="crop-footer">
+      <p class="crop-hint">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Drag corners/edges to adjust · Auto-padded 18% margin
+      </p>
+      <div class="crop-actions">
+        <button class="btn btn-ghost btn-sm" id="auto-back-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <button class="btn btn-primary" id="auto-extract-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Extract Code
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STATE: MANUAL CROP ── -->
+  <div id="manual-crop-panel" class="state-panel hidden" aria-label="Manual crop tool">
+    <div class="sec-header">
+      <p class="sec-label">Step 2 of 3 · Manual Crop</p>
+      <h2 class="sec-title">Select the code region</h2>
+      <p class="sec-sub">Click and drag to draw a selection. Resize with the handles.</p>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="manual-toolbar" role="toolbar" aria-label="Crop tools">
+      <span class="toolbar-lbl">Zoom</span>
+      <button class="btn btn-ghost btn-icon btn-sm" id="zoom-in-btn" aria-label="Zoom in" title="Zoom in">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+      </button>
+      <span class="zoom-val" id="zoom-display" aria-live="polite">100%</span>
+      <button class="btn btn-ghost btn-icon btn-sm" id="zoom-out-btn" aria-label="Zoom out" title="Zoom out">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+      </button>
+      <button class="btn btn-ghost btn-icon btn-sm" id="zoom-fit-btn" aria-label="Fit to screen" title="Fit to screen">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      </button>
+
+      <div class="toolbar-sep" aria-hidden="true"></div>
+
+      <button class="btn btn-ghost btn-icon btn-sm" id="manual-reset-btn" aria-label="Clear selection" title="Clear selection">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+
+      <div class="toolbar-sep" aria-hidden="true"></div>
+      <span class="toolbar-lbl" id="manual-hint-lbl">Draw a selection</span>
+    </div>
+
+    <div class="crop-canvas-wrap">
+      <canvas id="manual-crop-canvas" aria-label="Manual crop canvas — drag to select code region"></canvas>
+    </div>
+
+    <div class="crop-footer">
+      <p class="crop-hint">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Space+drag to pan · Scroll to zoom · Drag handles to resize
+      </p>
+      <div class="crop-actions">
+        <button class="btn btn-ghost btn-sm" id="manual-back-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+        <button class="btn btn-primary" id="manual-extract-btn" disabled aria-disabled="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Extract Code
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STATE: PROCESSING ── -->
+  <div id="processing-panel" class="state-panel hidden" aria-label="Processing" aria-live="polite">
+    <div class="processing-orb" aria-hidden="true">
+      <div class="orb-ring"></div>
+      <div class="orb-ring-2"></div>
+      <div class="orb-center">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+    </div>
+
+    <div>
+      <h2 class="processing-title">Extracting your code…</h2>
+      <p class="processing-sub" id="proc-status-text">Analyzing image with Gemini Vision</p>
+    </div>
+
+    <div class="proc-steps" role="status" aria-label="Extraction progress">
+      <div class="proc-step" id="step-1" aria-label="Step 1: Encoding image">
+        <div class="step-pip"></div>
+        <span>Encoding image</span>
+      </div>
+      <div class="proc-step" id="step-2" aria-label="Step 2: Sending to Gemini Vision">
+        <div class="step-pip"></div>
+        <span>Sending to Gemini Vision</span>
+      </div>
+      <div class="proc-step" id="step-3" aria-label="Step 3: Parsing code structure">
+        <div class="step-pip"></div>
+        <span>Parsing code structure</span>
+      </div>
+      <div class="proc-step" id="step-4" aria-label="Step 4: Detecting language">
+        <div class="step-pip"></div>
+        <span>Detecting language &amp; highlighting</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STATE: RESULT ── -->
+  <div id="result-panel" class="state-panel hidden" aria-label="Extraction result"
+       style="touch-action: pan-y;">
+
+    <div class="result-topbar">
+      <div class="result-meta">
+        <h2 class="sec-title" style="font-size:20px">Code extracted</h2>
+        <div class="lang-chip" id="lang-chip" aria-label="Detected language">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span id="lang-name">plaintext</span>
+        </div>
+      </div>
+
+      <div class="result-actions">
+        <button class="btn btn-secondary btn-sm" id="view-original-btn" aria-label="Toggle original image">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Original
+        </button>
+        <button class="btn btn-secondary btn-sm" id="try-again-btn" aria-label="Re-extract with different settings">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+          Re-extract
+        </button>
+        <button class="btn btn-success" id="copy-btn" aria-label="Copy extracted code to clipboard">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy Code
+        </button>
+      </div>
+    </div>
+
+    <!-- Original image compare (hidden by default) -->
+    <div id="original-compare" class="img-preview-card hidden" aria-label="Original image">
+      <img id="original-img-display" src="" alt="Original uploaded screenshot">
+    </div>
+
+    <!-- Code window -->
+    <div class="code-window" id="code-window" role="region" aria-label="Extracted code">
+      <div class="code-titlebar" aria-hidden="true">
+        <div class="win-dots">
+          <span class="win-dot dot-r"></span>
+          <span class="win-dot dot-y"></span>
+          <span class="win-dot dot-g"></span>
+        </div>
+        <span class="code-filename" id="code-filename">extracted_code</span>
+      </div>
+      <div class="code-scroll">
+        <pre><code id="code-output" class="hljs"></code></pre>
+      </div>
+    </div>
+
+    <!-- Ambiguity warnings -->
+    <div id="ambig-section" class="ambig-box hidden" role="alert" aria-label="Ambiguous characters warning">
+      <div class="ambig-header">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Low-confidence characters detected — verify before use
+      </div>
+      <ul class="ambig-list" id="ambig-list" aria-label="List of ambiguous characters"></ul>
+    </div>
+
+    <!-- Reverify notice -->
+    <div class="reverify-card" role="note" aria-label="Accuracy notice">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <p class="reverify-text">
+        <strong>Always verify against the original image.</strong>
+        AI vision may occasionally misread characters — especially in low-res images or unusual fonts. The extracted code is a best-effort transcription.
+      </p>
+    </div>
+
+    <!-- Learning Tip callout -->
+    <div class="tip-callout" role="note" aria-label="Learning Tip">
+      <div class="tip-callout-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+      </div>
+      <p class="tip-callout-text">
+        <strong>Tip:</strong> This tool saves you retyping, not learning. Understand the code before you use it — don't just copy-paste blind.
+      </p>
+    </div>
+
+    <!-- Extract another -->
+    <div class="result-cta">
+      <button class="btn btn-primary btn-lg" id="extract-another-btn">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Extract Another
+      </button>
+    </div>
+  </div>
+
+</section>
+</main>
+
+<!-- ══════════════════════════════════════
+     FOOTER
+══════════════════════════════════════ -->
+<footer class="footer" role="contentinfo">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="logo-img" style="width:22px;height:22px">
+        <img src="logo.png" alt="" aria-hidden="true">
+      </div>
+      <span class="footer-brand-name">CodeSnapper</span>
+    </div>
+    <p class="footer-copy">&copy; 2026 CodeSnapper &middot; Images never stored &middot; Built with Gemini Vision &middot; Made by Mubashir Shaikh &amp; Claude</p>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="about.html" class="footer-link">About</a>
+      <a href="about.html#privacy" class="footer-link">Privacy</a>
+    </nav>
+  </div>
+</footer>
+
+<!-- ══════════════════════════════════════
+     MODALS
+══════════════════════════════════════ -->
+
+
+<!-- ══════════════════════════════════════
+     AUTH MODAL  (Sign-in / Create account)
+══════════════════════════════════════ -->
+<div id="auth-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"
+     aria-labelledby="auth-modal-title">
+  <div class="modal auth-modal">
+
+    <!-- close button -->
+    <button class="btn btn-ghost btn-icon modal-close-btn" id="auth-modal-close" aria-label="Close">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+
+    <!-- icon + heading -->
+    <div class="modal-icon-wrap modal-icon-brand" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </div>
+
+    <h2 class="modal-title" id="auth-modal-title">Continue with CodeSnapper</h2>
+    <p class="modal-desc" id="auth-modal-desc">
+      You've used all 25 free extractions. Sign in or create a free account to get
+      <strong>50 extractions per day</strong> — resets every 24 hours.
+    </p>
+
+    <!-- Tabs -->
+    <div class="auth-tabs" role="tablist" aria-label="Authentication options">
+      <button class="auth-tab active" id="tab-signin" role="tab"
+              aria-selected="true" aria-controls="auth-signin-pane">Sign in</button>
+      <button class="auth-tab" id="tab-signup" role="tab"
+              aria-selected="false" aria-controls="auth-signup-pane">Create account</button>
+    </div>
+
+    <!-- ── SIGN IN ── -->
+    <div id="auth-signin-pane" role="tabpanel" aria-labelledby="tab-signin">
+      <div class="field">
+        <label class="field-label" for="signin-email">Email</label>
+        <input type="email" id="signin-email" class="input" placeholder="you@example.com"
+               autocomplete="email" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="field-label" for="signin-password">Password</label>
+        <div class="input-wrap">
+          <input type="password" id="signin-password" class="input input-mono"
+                 placeholder="••••••••" autocomplete="current-password">
+          <button type="button" class="input-eye" id="signin-eye" aria-label="Show password">
+            <svg id="signin-eye-show" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg id="signin-eye-hide" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+      </div>
+      <p class="auth-error hidden" id="signin-error" role="alert"></p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="signin-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Sign in
+        </button>
+        <button class="btn btn-ghost" id="auth-cancel-btn">Maybe later</button>
+      </div>
+    </div>
+
+    <!-- ── CREATE ACCOUNT ── -->
+    <div id="auth-signup-pane" class="hidden" role="tabpanel" aria-labelledby="tab-signup">
+      <div class="field">
+        <label class="field-label" for="signup-email">Email</label>
+        <input type="email" id="signup-email" class="input" placeholder="you@example.com"
+               autocomplete="email" spellcheck="false">
+      </div>
+      <div class="field">
+        <label class="field-label" for="signup-password">Password
+          <span class="field-hint" style="margin-left:6px">(min. 8 characters)</span>
+        </label>
+        <div class="input-wrap">
+          <input type="password" id="signup-password" class="input input-mono"
+                 placeholder="Min 8 characters" autocomplete="new-password">
+          <button type="button" class="input-eye" id="signup-eye" aria-label="Show password">
+            <svg id="signup-eye-show" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg id="signup-eye-hide" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
+        </div>
+      </div>
+      <!-- Password strength -->
+      <div class="pw-strength-wrap" id="pw-strength-wrap">
+        <div class="pw-strength-bar">
+          <div class="pw-strength-fill" id="pw-strength-fill"></div>
+        </div>
+        <span class="pw-strength-lbl" id="pw-strength-lbl"></span>
+      </div>
+      <p class="auth-error hidden" id="signup-error" role="alert"></p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="signup-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+          Create account &amp; continue
+        </button>
+        <button class="btn btn-ghost" id="auth-signup-cancel-btn">Maybe later</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Error Modal -->
+<div id="error-modal" class="modal-backdrop hidden" role="alertdialog" aria-modal="true" aria-labelledby="error-modal-title">
+  <div class="modal modal-sm">
+    <button class="btn btn-ghost btn-icon modal-close-btn" id="error-modal-close" aria-label="Close">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="modal-icon-wrap" style="background:rgba(239,68,68,.1)" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    </div>
+    <h2 class="modal-title" id="error-modal-title">Extraction failed</h2>
+    <p class="modal-desc" id="error-modal-msg">Something went wrong. Please try again.</p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="error-retry-btn">Try Again</button>
+      <button class="btn btn-ghost" id="error-modal-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TOAST
+══════════════════════════════════════ -->
+<div id="toast" role="status" aria-live="polite">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+  <span id="toast-msg">Code copied!</span>
+</div>
+
+<!-- ══════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

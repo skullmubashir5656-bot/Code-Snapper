@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>About CodeSnapper — How It Works & Privacy</title>
+  <meta name="description" content="Learn how CodeSnapper extracts code from screenshots using AI vision. Understand our privacy practices, accuracy limitations, and workflow.">
+  <meta property="og:title" content="About CodeSnapper">
+  <meta property="og:description" content="How CodeSnapper works — AI-powered code extraction, privacy policy, and accuracy guidelines.">
+  <meta name="theme-color" content="#7c3aed">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     HEADER
+══════════════════════════════════════ -->
+<header class="header" role="banner">
+  <div class="container header-inner">
+    <a href="index.html" class="logo" aria-label="CodeSnapper Home">
+      <div class="logo-img">
+        <img src="logo.png" alt="CodeSnapper Logo">
+      </div>
+      <span class="logo-wordmark">CodeSnapper</span>
+    </a>
+
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+      <a href="index.html" class="nav-link">Extract</a>
+      <a href="about.html" class="nav-link active">About</a>
+      <a href="index.html" class="nav-cta">Try It Free</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════
+     ABOUT CONTENT
+══════════════════════════════════════ -->
+<main role="main">
+<div class="about-wrap">
+
+  <!-- Hero -->
+  <section class="about-hero" aria-labelledby="about-main-title">
+    <p class="hero-badge" style="animation:none">
+      <span class="badge-pulse"></span>
+      Transparent · Private · Accurate
+    </p>
+    <h1 class="about-title" id="about-main-title">
+      How <span style="background:linear-gradient(135deg,#7c3aed,#4f46e5);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">CodeSnapper</span> works
+    </h1>
+    <p class="about-lead">
+      CodeSnapper uses Google's Gemini Vision LLM — not traditional OCR — to read and transcribe source code from screenshots with surgical precision.
+    </p>
+  </section>
+
+  <!-- ── HOW IT WORKS ── -->
+  <section class="about-section" aria-labelledby="how-works-title">
+    <p class="about-sec-label">The workflow</p>
+    <h2 class="about-sec-title" id="how-works-title">Step by step</h2>
+
+    <div class="flow-steps" role="list">
+      <article class="flow-step" role="listitem">
+        <div class="step-num" aria-hidden="true">1</div>
+        <div class="step-body">
+          <h3 class="step-heading">Upload your screenshot</h3>
+          <p class="step-detail">
+            Drop a PNG, JPG, WEBP, or GIF (up to 10 MB) into the upload zone, paste it from clipboard with <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+V</kbd>, or press <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+O</kbd> to browse. Any screenshot — terminal, IDE, browser, phone camera — works.
+          </p>
+        </div>
+      </article>
+
+      <article class="flow-step" role="listitem">
+        <div class="step-num" aria-hidden="true">2</div>
+        <div class="step-body">
+          <h3 class="step-heading">Crop the code region</h3>
+          <p class="step-detail">
+            <strong>Auto Crop</strong> scans pixel data to detect the code block boundary, then adds an 18% generous padding so no line is ever clipped. You see an editable preview with draggable handles to fine-tune before committing.
+            <strong>Manual Crop</strong> gives you a drag-to-select canvas with zoom and pan controls — perfect for screenshots with UI chrome, watermarks, or multiple code blocks.
+          </p>
+        </div>
+      </article>
+
+      <article class="flow-step" role="listitem">
+        <div class="step-num" aria-hidden="true">3</div>
+        <div class="step-body">
+          <h3 class="step-heading">Gemini Vision extracts the code</h3>
+          <p class="step-detail">
+            The cropped image is sent to <strong>Google Gemini 3.6 Flash</strong> with a highly constrained prompt that instructs it to output <em>only</em> the raw code — no explanations, no markdown fences, no commentary. The model preserves exact indentation, every special character, and every line break. Temperature is set to near-zero (0.05) for maximum determinism.
+          </p>
+        </div>
+      </article>
+
+      <article class="flow-step" role="listitem">
+        <div class="step-num" aria-hidden="true">4</div>
+        <div class="step-body">
+          <h3 class="step-heading">Auto-detect language &amp; highlight</h3>
+          <p class="step-detail">
+            Highlight.js analyses the extracted code to identify the programming language (Python, JavaScript, TypeScript, HTML, CSS, Java, C++, Go, Rust, Ruby, PHP, Swift, Kotlin, SQL, and 30+ more). Syntax highlighting is then applied client-side, rendering in a polished editor-style window.
+          </p>
+        </div>
+      </article>
+
+      <article class="flow-step" role="listitem">
+        <div class="step-num" aria-hidden="true">5</div>
+        <div class="step-body">
+          <h3 class="step-heading">Copy with one click</h3>
+          <p class="step-detail">
+            Hit <strong>Copy Code</strong> — the raw, unhighlighted code is placed in your clipboard instantly. Ambiguous characters (e.g. the digit <code style="color:var(--violet-d)">1</code> vs letter <code style="color:var(--violet-d)">l</code>) are flagged in a separate warning section without altering the copyable output.
+          </p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── ACCURACY ── -->
+  <section class="about-section" aria-labelledby="accuracy-title">
+    <p class="about-sec-label">Accuracy &amp; limitations</p>
+    <h2 class="about-sec-title" id="accuracy-title">Always verify your code</h2>
+
+    <div class="caution-box" role="note" aria-label="Important accuracy warning">
+      <div class="caution-head">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <strong>⚠ Always reverify against the original image before use</strong>
+      </div>
+      <p class="caution-body">
+        CodeSnapper is a convenience tool, not a guaranteed transcription service. AI vision models can misread characters — especially in low-resolution images, unusual fonts, or compressed screenshots. Common confusion pairs include:
+        <code style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(245,158,11,.07);border-radius:6px;font-size:13px;color:var(--warning);letter-spacing:.5px">
+          0 ↔ O &nbsp;&nbsp; 1 ↔ l ↔ | &nbsp;&nbsp; 5 ↔ S &nbsp;&nbsp; 6 ↔ G &nbsp;&nbsp; 8 ↔ B &nbsp;&nbsp; , ↔ . &nbsp;&nbsp; ; ↔ :
+        </code>
+        <br><br>
+        When CodeSnapper detects ambiguity it shows a warning below the code listing the affected lines — but it cannot catch every case. <strong>Always open the original screenshot side-by-side and compare critical sections</strong> before running or deploying any extracted code.
+      </p>
+    </div>
+
+    <!-- Learning Tip callout -->
+    <div class="tip-callout" style="margin-top:16px" role="note" aria-label="Learning Tip">
+      <div class="tip-callout-icon" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+      </div>
+      <p class="tip-callout-text">
+        <strong>Tip:</strong> This tool saves you retyping, not learning. Understand the code before you use it — don't just copy-paste blind.
+      </p>
+    </div>
+
+    <div class="about-body">
+      <p>Accuracy is generally excellent for:</p>
+      <ul style="padding-left:24px;margin:10px 0 18px;display:flex;flex-direction:column;gap:6px">
+        <li>High-resolution IDE screenshots (VS Code, JetBrains, Xcode)</li>
+        <li>Terminal/console output with standard monospace fonts</li>
+        <li>Screenshots from modern websites and documentation</li>
+        <li>Code blocks photographed from printed or e-ink displays</li>
+      </ul>
+      <p>Accuracy may be reduced for:</p>
+      <ul style="padding-left:24px;margin:10px 0;display:flex;flex-direction:column;gap:6px">
+        <li>Heavily compressed JPEGs or screenshots of screenshots</li>
+        <li>Unusual or decorative code fonts</li>
+        <li>Very small font sizes (below ~10px effective size)</li>
+        <li>Images with glare, reflections, or perspective distortion</li>
+        <li>Syntax-colored code where similar hues are on similar background</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ── WHY VISION LLM ── -->
+  <section class="about-section" aria-labelledby="why-llm-title">
+    <p class="about-sec-label">Technology</p>
+    <h2 class="about-sec-title" id="why-llm-title">Why a Vision LLM — not OCR?</h2>
+    <div class="about-body">
+      <p>
+        Traditional OCR engines (Tesseract, AWS Textract, etc.) treat code as generic text. They struggle with the unique density and character-level ambiguity of source code — they don't understand that <code style="color:var(--violet-d)">!=</code> is a single operator, or that indentation is semantically meaningful, or that a <code style="color:var(--violet-d)">//</code> in C++ differs from a <code style="color:var(--violet-d)">#</code> in Python.
+      </p>
+      <p>
+        Google Gemini 3.6 Flash is a multimodal LLM trained on enormous amounts of code across many programming languages. It "understands" code at a syntactic level — it knows what's plausible for a given language, can disambiguate characters based on context, and handles unusual code layouts that would trip up traditional OCR.
+      </p>
+      <p>
+        The tradeoff: an LLM <em>could</em> hallucinate content it didn't see. This is why CodeSnapper uses an extremely strict prompt at near-zero temperature, and why we strongly recommend verifying all extracted code. We pick accuracy and context-awareness over false confidence.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── PRIVACY ── -->
+  <section class="about-section" id="privacy" aria-labelledby="privacy-title">
+    <p class="about-sec-label">Privacy</p>
+    <h2 class="about-sec-title" id="privacy-title">Your images are never stored</h2>
+    <div class="about-body">
+      <p>
+        CodeSnapper sends your screenshot to the local server, which securely proxies it to Google Gemini Vision using a server-side API key you never need to touch. Images are never written to disk and are immediately discarded from memory after extraction.
+      </p>
+    </div>
+
+    <div class="privacy-grid" role="list" aria-label="Privacy features">
+      <div class="priv-card" role="listitem">
+        <div class="priv-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+        </div>
+        <h3 class="priv-title">Client-side only</h3>
+        <p class="priv-desc">No CodeSnapper server ever receives your images. Everything runs in your browser.</p>
+      </div>
+
+      <div class="priv-card" role="listitem">
+        <div class="priv-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h3 class="priv-title">Zero image storage</h3>
+        <p class="priv-desc">Images are processed and immediately discarded. We store nothing on disk or in a database.</p>
+      </div>
+
+      <div class="priv-card" role="listitem">
+        <div class="priv-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        </div>
+        <h3 class="priv-title">Server-side key</h3>
+        <p class="priv-desc">The Gemini API key is stored securely on the server — never in the browser or sent over the network to you.</p>
+      </div>
+
+      <div class="priv-card" role="listitem">
+        <div class="priv-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 class="priv-title">Google's data policy</h3>
+        <p class="priv-desc">Image data is sent to Google Gemini per <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer" style="color:var(--violet-d)">their API terms</a>. Free-tier API calls may be used by Google to improve models.</p>
+      </div>
+    </div>
+
+    <div class="about-body" style="margin-top:20px">
+      <p style="font-size:13px;color:var(--txt-3);font-weight:500">
+        <strong style="color:var(--txt-2)">Tip:</strong> If your screenshot contains sensitive information (API keys, passwords, proprietary code), consider using a paid Gemini API plan with data governance controls, or crop the image to include only the non-sensitive code regions before extraction.
+      </p>
+    </div>
+  </section>
+
+  <!-- ── FREE TIER ── -->
+  <section class="about-section" aria-labelledby="limits-title">
+    <p class="about-sec-label">Limits</p>
+    <h2 class="about-sec-title" id="limits-title">25 free extractions</h2>
+    <div class="about-body">
+      <p>
+        CodeSnapper gives you 25 free extractions without an account. After that, you'll be prompted to create a free account with your email and password — signed-in users get <strong>50 extractions per day</strong> on a rolling 24-hour window (not a midnight reset).
+      </p>
+      <p>
+        The extraction limit exists to ensure fair usage. Each extraction is processed via Gemini Vision AI — signed-in users get 50 per day on a rolling 24-hour window.
+      </p>
+    </div>
+  </section>
+
+  <!-- Authors -->
+  <section class="about-section" aria-labelledby="authors-title" style="padding-top:0">
+    <p class="about-sec-label">Credits</p>
+    <h2 class="about-sec-title" id="authors-title">Built by</h2>
+    <div class="about-body">
+      <p>
+        CodeSnapper was designed and built in 2026 as a collaborative project between
+        <strong>Mubashir Shaikh</strong> (product vision &amp; direction)
+        and <strong>Claude</strong> by <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer" style="color:var(--violet-d)">Anthropic</a>
+        (AI pair programmer &amp; engineer). Every line of code, UI component, and backend
+        logic was crafted together in a single pair-programming session — a human with
+        an idea and an AI that could build it.
+      </p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <div style="text-align:center;padding:40px 0 20px">
+    <a href="index.html" class="btn btn-primary btn-xl">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Start Extracting Code
+    </a>
+  </div>
+
+</div>
+</main>
+
+<!-- ══════════════════════════════════════
+     FOOTER
+══════════════════════════════════════ -->
+<footer class="footer" role="contentinfo">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="logo-img" style="width:22px;height:22px">
+        <img src="logo.png" alt="" aria-hidden="true">
+      </div>
+      <span class="footer-brand-name">CodeSnapper</span>
+    </div>
+    <p class="footer-copy">© 2026 CodeSnapper · Images never stored · Built with Gemini Vision · Made by Mubashir Shaikh &amp; Claude</p>
+    <nav class="footer-links" aria-label="Footer navigation">
+      <a href="index.html" class="footer-link">Extract</a>
+      <a href="about.html#privacy" class="footer-link">Privacy</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>
