@@ -154,6 +154,25 @@
 </div>
 
 <!-- ══════════════════════════════════════
+     RECENT EXTRACTIONS SECTION (Signed-in users)
+══════════════════════════════════════ -->
+<section id="history-section" class="history-section hidden" aria-label="Recent Extractions">
+  <div class="history-card">
+    <div class="history-header">
+      <div class="history-title-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px;color:var(--violet-d)"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <h3 class="history-title">Recent Extractions</h3>
+        <span class="history-badge">Signed In &middot; Last 10</span>
+      </div>
+      <span class="history-sub">Saved for 7 days</span>
+    </div>
+    <div id="history-list" class="history-list" role="list">
+      <!-- Filled dynamically via JS -->
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════
      APP WORKFLOW SECTION
 ══════════════════════════════════════ -->
 <section id="app-section" aria-label="Extraction workflow">
@@ -374,7 +393,7 @@
     <div id="ambig-section" class="ambig-box hidden" role="alert" aria-label="Ambiguous characters warning">
       <div class="ambig-header">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        Low-confidence characters detected — verify before use
+        <span id="ambig-title">Low-confidence characters detected — verify before use</span>
       </div>
       <ul class="ambig-list" id="ambig-list" aria-label="List of ambiguous characters"></ul>
     </div>

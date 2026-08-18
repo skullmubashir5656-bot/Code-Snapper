@@ -192,17 +192,17 @@
     <h2 class="about-sec-title" id="privacy-title">Your images are never stored</h2>
     <div class="about-body">
       <p>
-        CodeSnapper sends your screenshot to the local server, which securely proxies it to Google Gemini Vision using a server-side API key you never need to touch. Images are never written to disk and are immediately discarded from memory after extraction.
+        Your image is sent to our server solely to proxy it to Google Gemini Vision — it is never written to disk, never stored in any database, and discarded from memory immediately after extraction completes.
       </p>
     </div>
 
     <div class="privacy-grid" role="list" aria-label="Privacy features">
       <div class="priv-card" role="listitem">
         <div class="priv-icon" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </div>
-        <h3 class="priv-title">Client-side only</h3>
-        <p class="priv-desc">No CodeSnapper server ever receives your images. Everything runs in your browser.</p>
+        <h3 class="priv-title">Transient processing</h3>
+        <p class="priv-desc">Your image is processed in volatile memory for the duration of the request and immediately discarded.</p>
       </div>
 
       <div class="priv-card" role="listitem">
@@ -210,7 +210,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </div>
         <h3 class="priv-title">Zero image storage</h3>
-        <p class="priv-desc">Images are processed and immediately discarded. We store nothing on disk or in a database.</p>
+        <p class="priv-desc">Images are never saved to disk or database. Only raw extracted code text is stored if signed in.</p>
       </div>
 
       <div class="priv-card" role="listitem">

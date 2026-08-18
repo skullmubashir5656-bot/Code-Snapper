@@ -151,6 +151,9 @@ const els = {
 
   toast:    $('toast'),
   toastMsg: $('toast-msg'),
+
+  historySection: $('history-section'),
+  historyList:    $('history-list'),
 };
 
 /* ═══════════════════════════════════════════════
@@ -228,6 +231,87 @@ async function refreshAuthState() {
   } catch { /* offline — keep cached state */ }
 }
 
+/* ─── EXTRACTION HISTORY (Signed-in users) ─────────────────────── */
+async function fetchHistory() {
+  if (!els.historySection || !els.historyList) return;
+  if (!state.authToken) {
+    els.historySection.classList.add('hidden');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/history', {
+      headers: { 'Authorization': `Bearer ${state.authToken}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      renderHistory(data.history || []);
+    } else {
+      els.historySection.classList.add('hidden');
+    }
+  } catch {
+    els.historySection.classList.add('hidden');
+  }
+}
+
+function formatRelativeTime(timestamp) {
+  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}h ago`;
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}d ago`;
+}
+
+function renderHistory(items) {
+  if (!items || items.length === 0) {
+    els.historySection.classList.add('hidden');
+    return;
+  }
+
+  els.historySection.classList.remove('hidden');
+  els.historyList.innerHTML = items.map(item => {
+    const snippet = item.codeText.replace(/\s+/g, ' ').slice(0, 65) + (item.codeText.length > 65 ? '…' : '');
+    const timeStr = formatRelativeTime(item.createdAt);
+    const langLabel = (item.lang && item.lang !== 'auto') ? item.lang : 'CODE';
+
+    return `
+      <div class="history-item" role="listitem" data-id="${item.id}">
+        <div class="history-item-left">
+          <span class="history-lang-badge">${escapeHtml(langLabel)}</span>
+          <span class="history-code-snippet" title="${escapeHtml(item.codeText.slice(0, 200))}">${escapeHtml(snippet)}</span>
+        </div>
+        <div class="history-item-right">
+          <span class="history-time">${timeStr}</span>
+          <button class="btn btn-secondary history-restore-btn" onclick="restoreHistoryItem(${item.id})">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Restore
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  window._recentExtractions = items;
+}
+
+window.restoreHistoryItem = function(id) {
+  const item = (window._recentExtractions || []).find(i => i.id === id);
+  if (!item) return;
+
+  const { html, lang } = detectAndHighlight(item.codeText);
+  state.extractedCode = item.codeText;
+  state.detectedLang  = lang;
+  state.ambiguities   = [];
+  state.rawResponse   = item.codeText;
+
+  displayResult(item.codeText, html, lang, []);
+  showToast('Restored extraction from history!');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
 /* Update the header user pill */
 function updateUserPill() {
   const signedIn = !!state.authToken;
@@ -242,6 +326,9 @@ function updateUserPill() {
       ? `${rem} left today`
       : '50/day';
     els.userPillRemaining.style.color = (rem !== null && rem <= 5) ? 'var(--warning)' : 'var(--txt-2)';
+    fetchHistory();
+  } else {
+    if (els.historySection) els.historySection.classList.add('hidden');
   }
   // Keep mobile drawer auth section in sync
   updateMobileNavAuth();
@@ -1372,13 +1459,46 @@ function displayResult(code, highlightedHtml, lang, ambiguities) {
   els.codeOutput.innerHTML = highlightedHtml;
 
   // Ambiguities
-  if (ambiguities.length > 0) {
+  if (ambiguities && ambiguities.length > 0) {
     els.ambigSection.classList.remove('hidden');
-    els.ambigList.innerHTML = ambiguities
-      .map(a => `<li class="ambig-item">${escapeHtml(a)}</li>`)
-      .join('');
+    const ambigTitleEl = document.getElementById('ambig-title');
+    if (ambigTitleEl) {
+      ambigTitleEl.textContent = `${ambiguities.length} low-confidence character${ambiguities.length > 1 ? 's' : ''} detected — check flagged lines below`;
+    }
+
+    els.ambigList.innerHTML = ambiguities.map(a => {
+      const match = a.match(/line\s*(\d+)[:\s]+'?(.+?)'?\s+could be\s+'?(.+?)'?$/i);
+      if (match) {
+        const lineNum = match[1];
+        const char = match[2];
+        const alt = match[3];
+        return `
+          <li class="ambig-item">
+            <span class="ambig-line-badge">Line ${lineNum}</span>
+            <span>Character <code class="ambig-code">${escapeHtml(char)}</code> could be <code class="ambig-code">${escapeHtml(alt)}</code></span>
+          </li>
+        `;
+      }
+      return `
+        <li class="ambig-item">
+          <span class="ambig-line-badge">Notice</span>
+          <span>${escapeHtml(a)}</span>
+        </li>
+      `;
+    }).join('');
   } else {
     els.ambigSection.classList.add('hidden');
+  }
+
+  // Sync to history if signed in
+  if (state.authToken && code) {
+    fetch('/api/history/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
+      body: JSON.stringify({ codeText: code, lang })
+    }).then(r => r.json()).then(d => {
+      if (d.history) renderHistory(d.history);
+    }).catch(() => {});
   }
 
   showPanel('result');

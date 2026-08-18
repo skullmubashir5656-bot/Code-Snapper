@@ -144,6 +144,13 @@ db.exec(`
     count INTEGER DEFAULT 0,
     last_used_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS extraction_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_email TEXT NOT NULL,
+    code_text TEXT NOT NULL,
+    lang TEXT NOT NULL DEFAULT 'auto',
+    created_at INTEGER NOT NULL
+  );
 `);
 
 // Auto-migrate legacy users.json if present
@@ -238,6 +245,52 @@ function getRemaining(user) {
   return Math.max(0, AUTH_LIMIT - (user.countInWindow || 0));
 }
 
+/* ─── Extraction History Helpers (7-day retention, max 10 per user) ───────── */
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function cleanOldHistory() {
+  const cutoff = Date.now() - SEVEN_DAYS_MS;
+  db.prepare('DELETE FROM extraction_history WHERE created_at < ?').run(cutoff);
+}
+
+function saveExtractionHistory(email, codeText, lang = 'auto') {
+  if (!email || !codeText) return;
+  cleanOldHistory();
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO extraction_history (user_email, code_text, lang, created_at)
+    VALUES (?, ?, ?, ?)
+  `).run(email, codeText, lang || 'auto', now);
+
+  db.prepare(`
+    DELETE FROM extraction_history
+    WHERE user_email = ? AND id NOT IN (
+      SELECT id FROM extraction_history
+      WHERE user_email = ?
+      ORDER BY created_at DESC
+      LIMIT 10
+    )
+  `).run(email, email);
+}
+
+function getExtractionHistory(email) {
+  cleanOldHistory();
+  const rows = db.prepare(`
+    SELECT id, code_text, lang, created_at
+    FROM extraction_history
+    WHERE user_email = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+  `).all(email);
+
+  return rows.map(r => ({
+    id: r.id,
+    codeText: r.code_text,
+    lang: r.lang,
+    createdAt: r.created_at,
+  }));
+}
+
 /* ─── Auth middleware (optional — sets req.user if valid JWT present) ────── */
 function authenticate(req, _res, next) {
   const auth = req.headers.authorization;
@@ -256,6 +309,33 @@ function authenticate(req, _res, next) {
 app.get('/api/anon/status', (req, res) => {
   const ip = getClientIp(req);
   res.json(getAnonUsage(ip));
+});
+
+/* ─── GET /api/history ───────────────────────────────────────────────────── */
+app.get('/api/history', authenticate, (req, res) => {
+  if (!req.user)
+    return res.status(401).json({ error: 'Authentication required.' });
+  const history = getExtractionHistory(req.user.email);
+  res.json({ history });
+});
+
+/* ─── POST /api/history/save ─────────────────────────────────────────────── */
+app.post('/api/history/save', authenticate, (req, res) => {
+  if (!req.user)
+    return res.status(401).json({ error: 'Authentication required.' });
+  const { codeText, lang } = req.body || {};
+  if (!codeText)
+    return res.status(400).json({ error: 'Missing codeText.' });
+  saveExtractionHistory(req.user.email, codeText, lang);
+  res.json({ status: 'ok', history: getExtractionHistory(req.user.email) });
+});
+
+/* ─── DELETE /api/history/:id ────────────────────────────────────────────── */
+app.delete('/api/history/:id', authenticate, (req, res) => {
+  if (!req.user)
+    return res.status(401).json({ error: 'Authentication required.' });
+  db.prepare('DELETE FROM extraction_history WHERE id = ? AND user_email = ?').run(req.params.id, req.user.email);
+  res.json({ status: 'ok' });
 });
 
 /* ─── POST /api/auth/register ────────────────────────────────────────────── */
@@ -511,6 +591,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
               saveUser(user);
               remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
             }
+            saveExtractionHistory(req.user.email, text, 'auto');
           } else {
             // Anonymous IP tracking in SQLite
             const newAnon = incAnonUsage(clientIp);
