@@ -1,4 +1,4 @@
-# CodeSnap 🔍
+# CodeSnapper 🔍
 
 > **Extract clean, copy-ready code from any screenshot — powered by Gemini Vision AI**
 
