@@ -1,16 +1,16 @@
-# CodeSnap 🔍
+# CodeSnapper 🔍
 
 > **Extract clean, copy-ready code from any screenshot — powered by Gemini Vision AI**
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-code--snapper.onrender.com-blue?style=for-the-badge)](https://code-snapper.onrender.com)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-code--snapper.onrender.com-blue?style=for-the-badge)](https://code-snapperper.onrender.com)
 [![Node.js](https://img.shields.io/badge/Node.js-v24-green?style=for-the-badge&logo=node.js)](https://nodejs.org)
 [![Gemini Vision](https://img.shields.io/badge/Powered%20by-Gemini%20Vision-orange?style=for-the-badge&logo=google)](https://ai.google.dev)
 
 ---
 
-## What is CodeSnap?
+## What is CodeSnapper?
 
-CodeSnap is a premium, dark-themed web app that lets you upload or paste a screenshot of code and instantly get back a clean, copy-ready version — with exact indentation, syntax highlighting, and every special character preserved (colons, brackets, quotes, all of it).
+CodeSnapper is a premium, dark-themed web app that lets you upload or paste a screenshot of code and instantly get back a clean, copy-ready version — with exact indentation, syntax highlighting, and every special character preserved (colons, brackets, quotes, all of it).
 
 No more manually retyping code from tutorials, textbooks, or someone else's screen.
 
@@ -141,4 +141,4 @@ This project is for personal/educational use. All rights reserved © 2026 Mubash
 
 ---
 
-> 💡 **Tip:** CodeSnap makes grabbing code from a screenshot fast — but speed isn't the same as understanding. Before you copy-paste, take a moment to actually read through the code: know what each part does, why it's structured that way, and how it fits your own project.
+> 💡 **Tip:** CodeSnapper makes grabbing code from a screenshot fast — but speed isn't the same as understanding. Before you copy-paste, take a moment to actually read through the code: know what each part does, why it's structured that way, and how it fits your own project.
