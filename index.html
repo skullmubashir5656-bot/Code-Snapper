@@ -151,6 +151,13 @@
         <div class="usage-bar-fill" id="usage-fill" style="width:0%"></div>
       </div>
     </div>
+
+    <!-- Sign In / Sign Up Promo Callout for Anonymous Users -->
+    <div class="hero-auth-callout" id="hero-auth-callout">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--violet-d)" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>Want 50 extractions per 24 hours?</span>
+      <button type="button" class="hero-auth-btn" id="hero-signin-btn">Sign in / Create Account</button>
+    </div>
   </div>
 </div>
 
@@ -183,7 +190,7 @@
     <div class="sec-header">
       <p class="sec-label">Step 2 of 3</p>
       <h2 class="sec-title">Choose how to crop</h2>
-      <p class="sec-sub">Select the region of your image containing the code</p>
+      <p class="sec-sub">Select how you want to extract code from your screenshot</p>
     </div>
 
     <!-- Image preview -->
@@ -200,13 +207,13 @@
     <div class="crop-options" role="group" aria-label="Crop mode options">
       <!-- Auto Crop -->
       <div class="crop-card" id="auto-crop-btn" role="button" tabindex="0"
-           aria-label="Auto Crop: AI detects code boundaries automatically">
+           aria-label="Auto Crop: AI detects code boundaries and extracts automatically">
         <div class="crop-card-icon" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 6v6l4 2"/><path d="M16 2l2 2-2 2"/><path d="M22 2l-2 2 2 2"/></svg>
         </div>
-        <span class="crop-card-badge badge-rec">✦ Recommended</span>
+        <span class="crop-card-badge badge-rec">✦ Instant AI</span>
         <h3 class="crop-card-title">Auto Crop</h3>
-        <p class="crop-card-desc">AI detects the code block boundary, adds generous padding, and shows an editable preview before extraction.</p>
+        <p class="crop-card-desc">AI detects the code region, crops it automatically, and starts extraction with zero clicks required.</p>
       </div>
 
       <!-- Manual Crop -->
@@ -215,9 +222,9 @@
         <div class="crop-card-icon" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
         </div>
-        <span class="crop-card-badge badge-prec">Precision</span>
+        <span class="crop-card-badge badge-prec">Full Control</span>
         <h3 class="crop-card-title">Manual Crop</h3>
-        <p class="crop-card-desc">Drag to select the exact region. Zoom &amp; pan controls for pixel-perfect precision on dense screenshots.</p>
+        <p class="crop-card-desc">Full interactive canvas with drag-to-select, zoom &amp; pan controls so you can select your exact region before extracting.</p>
       </div>
     </div>
   </div>
@@ -539,6 +546,13 @@
           <div class="pw-strength-fill" id="pw-strength-fill"></div>
         </div>
         <span class="pw-strength-lbl" id="pw-strength-lbl"></span>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label class="field-label" for="signup-password-confirm">Confirm Password</label>
+        <div class="input-wrap">
+          <input type="password" id="signup-password-confirm" class="input input-mono"
+                 placeholder="Re-enter password" autocomplete="new-password">
+        </div>
       </div>
       <p class="auth-error hidden" id="signup-error" role="alert"></p>
       <div class="modal-actions">

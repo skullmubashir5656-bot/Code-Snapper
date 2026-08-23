@@ -136,12 +136,16 @@ const els = {
   signupBtn:          $('signup-btn'),
   authSignupCancelBtn:$('auth-signup-cancel-btn'),
 
-  // user pill (header)
+  signupPasswordConfirm: $('signup-password-confirm'),
+
+  // user pill (header) & hero callout
   navSigninBtn:   $('nav-signin-btn'),
   userPill:       $('user-pill'),
   userPillEmail:  $('user-pill-email'),
   userPillRemaining: $('user-pill-remaining'),
   signoutBtn:     $('signout-btn'),
+  heroAuthCallout:$('hero-auth-callout'),
+  heroSigninBtn:  $('hero-signin-btn'),
 
   errorModal:       $('error-modal'),
   errorModalMsg:    $('error-modal-msg'),
@@ -315,15 +319,18 @@ window.restoreHistoryItem = function(id) {
 /* Update the header user pill */
 function updateUserPill() {
   const signedIn = !!state.authToken;
-  els.navSigninBtn.classList.toggle('hidden', signedIn || !state.uploadedImg); // show only after upload
+  els.navSigninBtn.classList.toggle('hidden', signedIn); // Always visible when signed out!
   els.userPill.classList.toggle('hidden', !signedIn);
+  if (els.heroAuthCallout) {
+    els.heroAuthCallout.classList.toggle('hidden', signedIn);
+  }
   if (signedIn) {
     // Truncate email for small screens
     const email = state.authEmail || '';
     els.userPillEmail.textContent = email.length > 20 ? email.slice(0, 18) + '…' : email;
     const rem = state.authRemaining;
     els.userPillRemaining.textContent = rem !== null
-      ? `${rem} left today`
+      ? `${rem}/50 left today`
       : '50/day';
     els.userPillRemaining.style.color = (rem !== null && rem <= 5) ? 'var(--warning)' : 'var(--txt-2)';
     fetchHistory();
@@ -339,6 +346,7 @@ function openAuthModal(opts = {}) {
   // Reset fields and errors
   els.signinEmail.value = els.signinPassword.value = '';
   els.signupEmail.value = els.signupPassword.value = '';
+  if (els.signupPasswordConfirm) els.signupPasswordConfirm.value = '';
   els.signinError.classList.add('hidden');
   els.signupError.classList.add('hidden');
   els.pwStrengthFill.style.width = '0%';
@@ -438,9 +446,30 @@ async function handleSignIn() {
 }
 
 async function handleSignUp() {
-  const email    = els.signupEmail.value.trim();
-  const password = els.signupPassword.value;
+  const email       = els.signupEmail.value.trim();
+  const password    = els.signupPassword.value;
+  const confirmPass = els.signupPasswordConfirm ? els.signupPasswordConfirm.value : '';
+
   els.signupError.classList.add('hidden');
+
+  if (!email || !password) {
+    els.signupError.textContent = 'Email and password are required.';
+    els.signupError.classList.remove('hidden');
+    return;
+  }
+
+  if (password.length < 8) {
+    els.signupError.textContent = 'Password must be at least 8 characters.';
+    els.signupError.classList.remove('hidden');
+    return;
+  }
+
+  if (password !== confirmPass) {
+    els.signupError.textContent = 'Passwords do not match. Please re-enter passwords.';
+    els.signupError.classList.remove('hidden');
+    return;
+  }
+
   els.signupBtn.disabled = true;
   els.signupBtn.textContent = 'Creating account…';
   try {
@@ -890,14 +919,15 @@ class ManualCropper {
     this.canvas  = canvas;
     this.ctx     = canvas.getContext('2d');
     this.image   = image;
+    this.dpr     = Math.max(window.devicePixelRatio || 1, 2); // High-DPI for mobile sharpness
     this.zoom    = 1;
     this.panX    = 0;
     this.panY    = 0;
-    this.sel     = null;   // {x,y,w,h} in IMAGE coords
-    this.mode    = 'draw'; // draw|move|resize|pan
+    this.sel     = null;   // {x,y,w,h} in IMAGE natural coords
+    this.mode    = 'draw'; // draw|move|resize|pan|pinch
     this.dragging = false;
     this.dragStart = null;
-    this.HANDLE  = 9;
+    this.HANDLE  = 11;
     this.spaceDown = false;
     this.onSelectionChange = onSelectionChange || (() => {});
     this._bindEvents();
@@ -905,27 +935,37 @@ class ManualCropper {
   }
 
   _initCanvas() {
-    const maxW = this.canvas.parentElement.clientWidth || 800;
-    const maxH = 540;
-    this.canvas.width  = Math.min(maxW, 880);
-    this.canvas.height = maxH;
+    const parent = this.canvas.parentElement;
+    const rect = parent ? parent.getBoundingClientRect() : { width: 800 };
+    const cssW = rect.width || 800;
+    const cssH = Math.min(window.innerHeight * 0.65, 540);
+
+    this.cssW = cssW;
+    this.cssH = cssH;
+
+    // High-DPI buffer scaling: ensures crisp full-resolution rendering on mobile screens
+    this.canvas.width  = Math.round(cssW * this.dpr);
+    this.canvas.height = Math.round(cssH * this.dpr);
+    this.canvas.style.width  = `${cssW}px`;
+    this.canvas.style.height = `${cssH}px`;
+
     this.fitImage();
     this.render();
   }
 
   fitImage() {
     const img = this.image;
-    const scX = this.canvas.width  / img.naturalWidth;
-    const scY = this.canvas.height / img.naturalHeight;
+    const scX = this.cssW / img.naturalWidth;
+    const scY = this.cssH / img.naturalHeight;
     this.zoom = Math.min(scX, scY, 1);
     const sw = img.naturalWidth  * this.zoom;
     const sh = img.naturalHeight * this.zoom;
-    this.panX = (this.canvas.width  - sw) / 2;
-    this.panY = (this.canvas.height - sh) / 2;
+    this.panX = (this.cssW - sw) / 2;
+    this.panY = (this.cssH - sh) / 2;
     this._updateZoomDisplay();
   }
 
-  /* ── coord transforms ── */
+  /* ── coord transforms (mouse/touch CSS px → image natural px) ── */
   _c2i(cx, cy) {
     return { x: (cx - this.panX) / this.zoom, y: (cy - this.panY) / this.zoom };
   }
@@ -941,10 +981,8 @@ class ManualCropper {
   /* ── event helpers ── */
   _pos(e) {
     const r = this.canvas.getBoundingClientRect();
-    const sx = this.canvas.width  / r.width;
-    const sy = this.canvas.height / r.height;
-    const src = e.touches ? e.touches[0] : e;
-    return { x: (src.clientX - r.left)*sx, y: (src.clientY - r.top)*sy };
+    const src = e.touches && e.touches.length > 0 ? e.touches[0] : e;
+    return { x: src.clientX - r.left, y: src.clientY - r.top };
   }
 
   _bindEvents() {
@@ -952,9 +990,45 @@ class ManualCropper {
     window.addEventListener('mousemove', e => this._mmove(e));
     window.addEventListener('mouseup',   e => this._mup(e));
     this.canvas.addEventListener('wheel', e => { e.preventDefault(); this._wheel(e); }, { passive: false });
-    this.canvas.addEventListener('touchstart', e => { e.preventDefault(); this._mdown(e); }, { passive: false });
-    this.canvas.addEventListener('touchmove',  e => { e.preventDefault(); this._mmove(e); }, { passive: false });
-    this.canvas.addEventListener('touchend',   e => this._mup(e));
+
+    // Mobile touch events with pinch-to-zoom support
+    this.canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      if (e.touches.length === 2) {
+        this.dragging = false;
+        this.mode = 'pinch';
+        const t1 = e.touches[0], t2 = e.touches[1];
+        this.pinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        this.pinchStartZoom = this.zoom;
+        return;
+      }
+      this._mdown(e);
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchmove',  e => {
+      e.preventDefault();
+      if (this.mode === 'pinch' && e.touches.length === 2) {
+        const t1 = e.touches[0], t2 = e.touches[1];
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        if (this.pinchDist > 0) {
+          const scale = dist / this.pinchDist;
+          const newZoom = Math.min(10, Math.max(0.1, this.pinchStartZoom * scale));
+          this.zoom = newZoom;
+          this._updateZoomDisplay();
+          this.render();
+        }
+        return;
+      }
+      this._mmove(e);
+    }, { passive: false });
+
+    this.canvas.addEventListener('touchend', e => {
+      if (this.mode === 'pinch') {
+        this.mode = 'draw';
+      }
+      this._mup(e);
+    });
+
     window.addEventListener('keydown', e => {
       if (e.code === 'Space') { this.spaceDown = true; this.canvas.style.cursor = this.dragging ? 'grabbing' : 'grab'; }
     });
@@ -967,7 +1041,7 @@ class ManualCropper {
     const sc = this._selCanvas();
     if (!sc) return null;
     const { x, y, w, h } = sc;
-    const H2 = this.HANDLE;
+    const H2 = this.HANDLE + 4; // larger touch area for mobile
     const handles = [
       { id:'tl', cx:x,     cy:y     }, { id:'tm', cx:x+w/2, cy:y     }, { id:'tr', cx:x+w,   cy:y     },
       { id:'ml', cx:x,     cy:y+h/2 }, { id:'mr', cx:x+w,   cy:y+h/2 },
@@ -1012,7 +1086,6 @@ class ManualCropper {
 
   _mmove(e) {
     if (!this.dragging) {
-      // Update cursor
       const pos = this._pos(e);
       if (this.spaceDown) { this.canvas.style.cursor = 'grab'; return; }
       if (this._hitsHandle(pos.x, pos.y)) { this.canvas.style.cursor = 'pointer'; }
@@ -1069,7 +1142,7 @@ class ManualCropper {
     this.mode = 'draw';
     this.canvas.style.cursor = 'crosshair';
     if (this.sel && (this.sel.w < 4 || this.sel.h < 4)) {
-      this.sel = null; // discard tiny accidental selections
+      this.sel = null;
     }
     this.render();
     this.onSelectionChange(this.sel);
@@ -1088,7 +1161,7 @@ class ManualCropper {
   }
 
   zoomBy(factor) {
-    const cx = this.canvas.width/2, cy = this.canvas.height/2;
+    const cx = this.cssW/2, cy = this.cssH/2;
     const newZoom = Math.min(10, Math.max(0.1, this.zoom * factor));
     const ratio = newZoom / this.zoom;
     this.panX = cx - (cx - this.panX) * ratio;
@@ -1106,40 +1179,54 @@ class ManualCropper {
 
   render() {
     const ctx = this.ctx;
-    const cw = this.canvas.width, ch = this.canvas.height;
+    const dpr = this.dpr;
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+
+    ctx.save();
+    ctx.clearRect(0, 0, cw, ch);
+
+    // High-DPI transform scaling
+    ctx.scale(dpr, dpr);
 
     // Background
     ctx.fillStyle = '#0a0a12';
-    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillRect(0, 0, this.cssW, this.cssH);
 
-    // Draw image
+    // Draw full-resolution image crisply
     const imgW = this.image.naturalWidth  * this.zoom;
     const imgH = this.image.naturalHeight * this.zoom;
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(this.image, this.panX, this.panY, imgW, imgH);
 
-    if (!this.sel || this.sel.w < 2 || this.sel.h < 2) return;
+    if (!this.sel || this.sel.w < 2 || this.sel.h < 2) {
+      ctx.restore();
+      return;
+    }
 
     const sc = this._selCanvas();
     const { x, y, w, h } = sc;
 
     // Dim overlay
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(0, 0, this.cssW, this.cssH);
 
-    // Clear selection
+    // Clear selection area with crisp natural-resolution image
     ctx.drawImage(this.image,
       this.sel.x, this.sel.y, this.sel.w, this.sel.h,
       x, y, w, h
     );
 
-    // Marching-ants style border
+    // Marching-ants border
     ctx.strokeStyle = '#7c3aed';
     ctx.lineWidth = 2;
     ctx.strokeRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 4]);
-    ctx.strokeRect(x+1, y+1, w-2, h-2);
+    ctx.strokeRect(x+1, y+1, Math.max(1, w-2), Math.max(1, h-2));
     ctx.setLineDash([]);
 
     // Handles
@@ -1161,10 +1248,12 @@ class ManualCropper {
     const label = `${Math.round(this.sel.w)} × ${Math.round(this.sel.h)} px`;
     ctx.font = '12px JetBrains Mono, monospace';
     const tw = ctx.measureText(label).width;
-    const lx = Math.min(x + w - tw - 6, cw - tw - 8);
+    const lx = Math.min(x + w - tw - 6, this.cssW - tw - 8);
     const ly = y > 20 ? y - 6 : y + h + 16;
     ctx.fillStyle = '#7c3aed';
     ctx.fillText(label, lx, ly);
+
+    ctx.restore();
   }
 
   getCroppedDataURL() {
@@ -1723,11 +1812,7 @@ function bindEvents() {
   });
 
   els.tryAgainBtn.addEventListener('click', () => {
-    if (state.manualCropper) {
-      showPanel('manual-crop');
-    } else {
-      showPanel('auto-crop');
-    }
+    showPanel('crop-select');
   });
 
   els.extractAnotherBtn.addEventListener('click', resetToHero);
@@ -1767,6 +1852,9 @@ function bindEvents() {
 
   /* ── Nav sign-in / sign-out ── */
   els.navSigninBtn.addEventListener('click', () => openAuthModal({ tab: 'signin' }));
+  if (els.heroSigninBtn) {
+    els.heroSigninBtn.addEventListener('click', () => openAuthModal({ tab: 'signin' }));
+  }
   els.signoutBtn.addEventListener('click', () => {
     clearAuth();
     updateUserPill();
@@ -1803,13 +1891,15 @@ function bindEvents() {
 ═══════════════════════════════════════════════ */
 function enterAutoCrop() {
   if (!state.uploadedImg) return;
-  showPanel('auto-crop');
-
-  // Small timeout to let panel render
-  requestAnimationFrame(() => {
-    if (state.autoCropper) { state.autoCropper.destroy(); state.autoCropper = null; }
-    state.autoCropper = new AutoCropper(els.autoCropCanvas, state.uploadedImg);
-  });
+  // Silent Auto Crop — detect code region, crop offscreen, and extract immediately with 0 clicks
+  const dummyCanvas = document.createElement('canvas');
+  const cropper = new AutoCropper(dummyCanvas, state.uploadedImg);
+  const dataURL = cropper.getCroppedDataURL();
+  if (dataURL) {
+    runExtraction(dataURL);
+  } else {
+    runExtraction(state.uploadedDataURL);
+  }
 }
 
 function enterManualCrop() {

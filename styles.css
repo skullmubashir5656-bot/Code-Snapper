@@ -1324,3 +1324,20 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   background: rgba(255,255,255,.1); color: var(--txt);
   padding: 1px 6px; border-radius: 4px; font-weight: 600;
 }
+
+/* Hero Auth Promo Callout */
+.hero-auth-callout {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 10px; margin-top: 14px; padding: 8px 16px;
+  background: var(--card-2); border: 1px solid var(--border-2);
+  border-radius: var(--r-xl); font-size: 13px; color: var(--txt-2);
+  box-shadow: 0 4px 16px rgba(0,0,0,.2); flex-wrap: wrap;
+}
+.hero-auth-btn {
+  background: var(--g-brand); -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent; font-weight: 700;
+  border: none; cursor: pointer; padding: 2px 4px;
+  text-decoration: underline; font-size: 13px;
+  transition: opacity var(--t-base);
+}
+.hero-auth-btn:hover { opacity: 0.85; }
