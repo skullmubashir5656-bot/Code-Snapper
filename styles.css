@@ -130,9 +130,31 @@ a { color: inherit; }
 code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace; }
 
 /* ============================================================
-   UTILITY
+   STRICT STEP / PANEL VISIBILITY MANAGEMENT
    ============================================================ */
-.hidden { display: none !important; }
+.hidden,
+[hidden],
+#hero-panel.hidden,
+#app-section.hidden,
+#crop-select-panel.hidden,
+#auto-crop-panel.hidden,
+#manual-crop-panel.hidden,
+#processing-panel.hidden,
+#result-panel.hidden,
+#history-section.hidden,
+#original-compare.hidden,
+#ambig-section.hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
 .sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
 
 .fade-in  { animation: fadeIn .3s ease both; }
@@ -537,7 +559,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 /* ============================================================
    PROCESSING
    ============================================================ */
-#processing-panel {
+#processing-panel:not(.hidden) {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   min-height: 420px; gap: 32px; text-align: center;
@@ -601,7 +623,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 /* ============================================================
    RESULT PANEL
    ============================================================ */
-#result-panel { display: flex; flex-direction: column; gap: 20px; }
+#result-panel:not(.hidden) { display: flex; flex-direction: column; gap: 20px; }
 
 /* Sticky topbar: stays visible while scrolling through long code */
 .result-topbar {
@@ -1287,18 +1309,18 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   }
 
   /* Processing Panel — Vertically centered in viewport with no dead space */
-  #processing-panel {
-    min-height: calc(100vh - 120px) !important;
-    min-height: calc(100dvh - 120px) !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-    align-items: center !important;
-    text-align: center !important;
-    gap: 28px !important;
-    padding: 20px 0 !important;
-    margin: 0 !important;
-    box-sizing: border-box !important;
+  #processing-panel:not(.hidden) {
+    min-height: calc(100vh - 120px);
+    min-height: calc(100dvh - 120px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    gap: 28px;
+    padding: 20px 0;
+    margin: 0;
+    box-sizing: border-box;
   }
   .processing-title {
     font-size: 20px;
@@ -1308,10 +1330,12 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   }
 
   /* Result Panel & Sticky Topbar */
-  #result-panel {
+  #result-panel:not(.hidden) {
     gap: 16px;
     width: 100%;
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
   }
   .result-topbar {
     position: sticky;

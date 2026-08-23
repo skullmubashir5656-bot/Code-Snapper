@@ -161,33 +161,58 @@ const els = {
 };
 
 /* ═══════════════════════════════════════════════
-   PANEL MANAGEMENT
+   STEP MANAGER (MUTUALLY EXCLUSIVE STATES)
 ═══════════════════════════════════════════════ */
 function showPanel(name) {
   state.panel = name;
 
-  // Always restore body scroll — modals temporarily set overflow:hidden
+  // Always restore body & html scrolling
   document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+  document.body.style.position = '';
+  document.body.style.touchAction = '';
 
-  const heroVisible     = name === 'hero';
-  const appVisible      = name !== 'hero';
-  const cropSelectVis   = name === 'crop-select';
-  const autoCropVis     = name === 'auto-crop';
-  const manualCropVis   = name === 'manual-crop';
-  const processingVis   = name === 'processing';
-  const resultVis       = name === 'result';
+  const allPanels = [
+    { id: 'hero',         el: els.heroPanel },
+    { id: 'crop-select',  el: els.cropSelectPanel },
+    { id: 'auto-crop',    el: els.autoCropPanel },
+    { id: 'manual-crop',  el: els.manualCropPanel },
+    { id: 'processing',   el: els.processingPanel },
+    { id: 'result',       el: els.resultPanel },
+  ];
 
-  els.heroPanel.classList.toggle('hidden', !heroVisible);
-  els.appSection.classList.toggle('hidden', !appVisible);
-  els.cropSelectPanel.classList.toggle('hidden', !cropSelectVis);
-  els.autoCropPanel.classList.toggle('hidden', !autoCropVis);
-  els.manualCropPanel.classList.toggle('hidden', !manualCropVis);
-  els.processingPanel.classList.toggle('hidden', !processingVis);
-  els.resultPanel.classList.toggle('hidden', !resultVis);
+  // 1. Explicitly hide ALL panels first
+  allPanels.forEach(({ el }) => {
+    if (!el) return;
+    el.classList.add('hidden');
+    el.setAttribute('hidden', 'true');
+    el.style.display = 'none';
+  });
 
-  if (appVisible) {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // 2. Manage parent #app-section container
+  const isHero = name === 'hero';
+  if (els.appSection) {
+    if (isHero) {
+      els.appSection.classList.add('hidden');
+      els.appSection.setAttribute('hidden', 'true');
+      els.appSection.style.display = 'none';
+    } else {
+      els.appSection.classList.remove('hidden');
+      els.appSection.removeAttribute('hidden');
+      els.appSection.style.display = '';
+    }
   }
+
+  // 3. Show ONLY the active panel
+  const active = allPanels.find(p => p.id === name);
+  if (active && active.el) {
+    active.el.classList.remove('hidden');
+    active.el.removeAttribute('hidden');
+    active.el.style.display = '';
+  }
+
+  // 4. Instant scroll to top
+  window.scrollTo(0, 0);
 }
 
 /* ═══════════════════════════════════════════════
