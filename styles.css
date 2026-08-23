@@ -134,6 +134,10 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
    ============================================================ */
 .hidden,
 [hidden],
+#feedback-modal.hidden,
+#auth-modal.hidden,
+#error-modal.hidden,
+#admin-login-modal.hidden,
 #hero-panel.hidden,
 #app-section.hidden,
 #crop-select-panel.hidden,
@@ -1131,6 +1135,13 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   transition: color var(--t-base); font-weight: 600;
 }
 .footer-link:hover { color: #ffffff; text-decoration: underline; }
+.footer-btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
 .footer-sep { color: var(--txt-3); font-size: 14px; user-select: none; }
 
 

@@ -549,12 +549,16 @@ function updateUsageUI() {
 function openModal(el)  {
   if (!el) return;
   el.classList.remove('hidden');
+  el.removeAttribute('hidden');
+  el.style.display = 'flex';
   document.body.style.overflow = 'hidden';
   document.documentElement.style.overflow = 'hidden';
 }
 function closeModal(el) {
   if (!el) return;
   el.classList.add('hidden');
+  el.setAttribute('hidden', 'true');
+  el.style.display = 'none';
   document.body.style.overflow = '';
   document.documentElement.style.overflow = '';
   document.body.style.position = '';
@@ -1965,11 +1969,6 @@ function bindEvents() {
     });
   }
 
-  // Check URL hash for direct #report-issue link
-  if (window.location.hash === '#report-issue') {
-    setTimeout(openFeedbackModal, 200);
-  }
-
   /* ── Close modals on backdrop click ── */
   [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
     if (modal) modal.addEventListener('click', e => {
@@ -2000,6 +1999,9 @@ function openFeedbackModal() {
 function closeFeedbackModal() {
   if (!els.feedbackModal) return;
   closeModal(els.feedbackModal);
+  if (window.location.hash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
 }
 
 async function handleFeedbackSubmit(e) {
@@ -2091,6 +2093,10 @@ function init() {
   updateUsageUI();
   updateUserPill();
   showPanel('hero');
+  // Clear any report hash from URL on refresh so modal never auto-opens
+  if (window.location.hash === '#report-issue' || window.location.hash === '#report') {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
   // Verify token with server in the background
   if (state.authToken) {
     refreshAuthState().then(updateUserPill);
