@@ -83,10 +83,6 @@ const els = {
   manualCropCanvas:$('manual-crop-canvas'),
   manualBackBtn:   $('manual-back-btn'),
   manualExtractBtn:$('manual-extract-btn'),
-  zoomInBtn:       $('zoom-in-btn'),
-  zoomOutBtn:      $('zoom-out-btn'),
-  zoomFitBtn:      $('zoom-fit-btn'),
-  zoomDisplay:     $('zoom-display'),
   manualResetBtn:  $('manual-reset-btn'),
   manualHintLbl:   $('manual-hint-lbl'),
 
@@ -987,269 +983,165 @@ function autoCropImage(img) {
 }
 
 /* ═══════════════════════════════════════════════
-   MANUAL CROPPER
+   MANUAL CROPPER (DRAG-TO-SELECT)
+   - Fitted to container width (no zoom / no pan)
+   - Drag to draw selection rectangle
+   - Semi-transparent overlay with bright border & corner accents
+   - High-DPI buffer for ultra-sharp full-resolution view
+   - Desktop mouse + Mobile touch with touch-action: none
+   - Full original resolution extraction
 ═══════════════════════════════════════════════ */
 class ManualCropper {
   constructor(canvas, image, onSelectionChange) {
-    this.canvas  = canvas;
-    this.ctx     = canvas.getContext('2d');
-    this.image   = image;
-    this.dpr     = Math.max(window.devicePixelRatio || 1, 2); // High-DPI for mobile sharpness
-    this.zoom    = 1;
-    this.panX    = 0;
-    this.panY    = 0;
-    this.sel     = null;   // {x,y,w,h} in IMAGE natural coords
-    this.mode    = 'draw'; // draw|move|resize|pan|pinch
-    this.dragging = false;
-    this.dragStart = null;
-    this.HANDLE  = 11;
-    this.spaceDown = false;
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.image = image;
+    this.dpr = Math.max(window.devicePixelRatio || 1, 2);
+    this.sel = null; // { x, y, w, h } in NATURAL image coordinates
+    this.isDragging = false;
+    this.startPoint = null; // { x, y } in CSS canvas px
     this.onSelectionChange = onSelectionChange || (() => {});
-    this._bindEvents();
+
+    this._onMouseDown  = this._handleMouseDown.bind(this);
+    this._onMouseMove  = this._handleMouseMove.bind(this);
+    this._onMouseUp    = this._handleMouseUp.bind(this);
+    this._onTouchStart = this._handleTouchStart.bind(this);
+    this._onTouchMove  = this._handleTouchMove.bind(this);
+    this._onTouchEnd   = this._handleTouchEnd.bind(this);
+
     this._initCanvas();
+    this._bindEvents();
   }
 
   _initCanvas() {
     const parent = this.canvas.parentElement;
-    const rect = parent ? parent.getBoundingClientRect() : { width: 800 };
-    const cssW = rect.width || 800;
-    const cssH = Math.min(window.innerHeight * 0.65, 540);
+    const parentW = parent ? parent.getBoundingClientRect().width : 800;
+    const cssW = Math.max(280, parentW || 800);
+
+    const imgW = this.image.naturalWidth || 800;
+    const imgH = this.image.naturalHeight || 600;
+    const aspect = imgH / imgW;
+
+    // Set display height proportional to aspect ratio
+    const cssH = Math.round(cssW * aspect);
 
     this.cssW = cssW;
     this.cssH = cssH;
+    this.scale = cssW / imgW; // 1 CSS px = (1 / scale) image px
 
-    // High-DPI buffer scaling: ensures crisp full-resolution rendering on mobile screens
-    this.canvas.width  = Math.round(cssW * this.dpr);
+    // High-DPI buffer configuration for crystal-clear render
+    this.canvas.width = Math.round(cssW * this.dpr);
     this.canvas.height = Math.round(cssH * this.dpr);
-    this.canvas.style.width  = `${cssW}px`;
+    this.canvas.style.width = `${cssW}px`;
     this.canvas.style.height = `${cssH}px`;
 
-    this.fitImage();
     this.render();
-  }
-
-  fitImage() {
-    const img = this.image;
-    const scX = this.cssW / img.naturalWidth;
-    const scY = this.cssH / img.naturalHeight;
-    this.zoom = Math.min(scX, scY, 1);
-    const sw = img.naturalWidth  * this.zoom;
-    const sh = img.naturalHeight * this.zoom;
-    this.panX = (this.cssW - sw) / 2;
-    this.panY = (this.cssH - sh) / 2;
-    this._updateZoomDisplay();
-  }
-
-  /* ── coord transforms (mouse/touch CSS px → image natural px) ── */
-  _c2i(cx, cy) {
-    return { x: (cx - this.panX) / this.zoom, y: (cy - this.panY) / this.zoom };
-  }
-  _i2c(ix, iy) {
-    return { x: ix * this.zoom + this.panX, y: iy * this.zoom + this.panY };
-  }
-  _selCanvas() {
-    if (!this.sel) return null;
-    const tl = this._i2c(this.sel.x, this.sel.y);
-    return { x: tl.x, y: tl.y, w: this.sel.w * this.zoom, h: this.sel.h * this.zoom };
-  }
-
-  /* ── event helpers ── */
-  _pos(e) {
-    const r = this.canvas.getBoundingClientRect();
-    const src = e.touches && e.touches.length > 0 ? e.touches[0] : e;
-    return { x: src.clientX - r.left, y: src.clientY - r.top };
   }
 
   _bindEvents() {
-    this.canvas.addEventListener('mousedown',  e => this._mdown(e));
-    window.addEventListener('mousemove', e => this._mmove(e));
-    window.addEventListener('mouseup',   e => this._mup(e));
-    this.canvas.addEventListener('wheel', e => { e.preventDefault(); this._wheel(e); }, { passive: false });
+    this.canvas.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mousemove', this._onMouseMove);
+    window.addEventListener('mouseup', this._onMouseUp);
 
-    // Mobile touch events with pinch-to-zoom support
-    this.canvas.addEventListener('touchstart', e => {
-      e.preventDefault();
-      if (e.touches.length === 2) {
-        this.dragging = false;
-        this.mode = 'pinch';
-        const t1 = e.touches[0], t2 = e.touches[1];
-        this.pinchDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-        this.pinchStartZoom = this.zoom;
-        return;
-      }
-      this._mdown(e);
-    }, { passive: false });
-
-    this.canvas.addEventListener('touchmove',  e => {
-      e.preventDefault();
-      if (this.mode === 'pinch' && e.touches.length === 2) {
-        const t1 = e.touches[0], t2 = e.touches[1];
-        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-        if (this.pinchDist > 0) {
-          const scale = dist / this.pinchDist;
-          const newZoom = Math.min(10, Math.max(0.1, this.pinchStartZoom * scale));
-          this.zoom = newZoom;
-          this._updateZoomDisplay();
-          this.render();
-        }
-        return;
-      }
-      this._mmove(e);
-    }, { passive: false });
-
-    this.canvas.addEventListener('touchend', e => {
-      if (this.mode === 'pinch') {
-        this.mode = 'draw';
-      }
-      this._mup(e);
-    });
-
-    window.addEventListener('keydown', e => {
-      if (e.code === 'Space') { this.spaceDown = true; this.canvas.style.cursor = this.dragging ? 'grabbing' : 'grab'; }
-    });
-    window.addEventListener('keyup', e => {
-      if (e.code === 'Space') { this.spaceDown = false; this.canvas.style.cursor = 'crosshair'; }
-    });
+    this.canvas.addEventListener('touchstart', this._onTouchStart, { passive: false });
+    this.canvas.addEventListener('touchmove', this._onTouchMove, { passive: false });
+    this.canvas.addEventListener('touchend', this._onTouchEnd, { passive: false });
   }
 
-  _hitsHandle(px, py) {
-    const sc = this._selCanvas();
-    if (!sc) return null;
-    const { x, y, w, h } = sc;
-    const H2 = this.HANDLE + 4; // larger touch area for mobile
-    const handles = [
-      { id:'tl', cx:x,     cy:y     }, { id:'tm', cx:x+w/2, cy:y     }, { id:'tr', cx:x+w,   cy:y     },
-      { id:'ml', cx:x,     cy:y+h/2 }, { id:'mr', cx:x+w,   cy:y+h/2 },
-      { id:'bl', cx:x,     cy:y+h   }, { id:'bm', cx:x+w/2, cy:y+h   }, { id:'br', cx:x+w,   cy:y+h   },
-    ];
-    return handles.find(h => Math.abs(px-h.cx) <= H2 && Math.abs(py-h.cy) <= H2) || null;
+  _getPos(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+    return {
+      x: Math.max(0, Math.min(this.cssW, clientX - rect.left)),
+      y: Math.max(0, Math.min(this.cssH, clientY - rect.top))
+    };
   }
 
-  _hitsSel(px, py) {
-    const sc = this._selCanvas();
-    if (!sc) return false;
-    return px >= sc.x && px <= sc.x+sc.w && py >= sc.y && py <= sc.y+sc.h;
+  _handleMouseDown(e) {
+    if (e.button !== 0) return; // Left click only
+    const pos = this._getPos(e);
+    this.isDragging = true;
+    this.startPoint = pos;
+    this.sel = null;
+    this.render();
+    this.onSelectionChange(null);
   }
 
-  _mdown(e) {
-    const pos = this._pos(e);
-    if (this.spaceDown) {
-      this.dragging = true;
-      this.mode = 'pan';
-      this.dragStart = { ...pos, panX: this.panX, panY: this.panY };
-      this.canvas.style.cursor = 'grabbing';
-      return;
-    }
+  _handleMouseMove(e) {
+    if (!this.isDragging || !this.startPoint) return;
+    const pos = this._getPos(e);
 
-    const handle = this._hitsHandle(pos.x, pos.y);
-    if (handle) {
-      this.dragging = true;
-      this.mode = 'resize';
-      this.dragStart = { ...pos, handleId: handle.id, startSel: {...this.sel} };
-    } else if (this._hitsSel(pos.x, pos.y)) {
-      this.dragging = true;
-      this.mode = 'move';
-      this.dragStart = { ...pos, startSel: {...this.sel} };
-    } else {
-      this.dragging = true;
-      this.mode = 'draw';
-      const ip = this._c2i(pos.x, pos.y);
-      this.sel = null;
-      this.dragStart = { ...pos, imgStart: ip };
-    }
-  }
+    const minX = Math.min(this.startPoint.x, pos.x);
+    const minY = Math.min(this.startPoint.y, pos.y);
+    const width = Math.abs(pos.x - this.startPoint.x);
+    const height = Math.abs(pos.y - this.startPoint.y);
 
-  _mmove(e) {
-    if (!this.dragging) {
-      const pos = this._pos(e);
-      if (this.spaceDown) { this.canvas.style.cursor = 'grab'; return; }
-      if (this._hitsHandle(pos.x, pos.y)) { this.canvas.style.cursor = 'pointer'; }
-      else if (this._hitsSel(pos.x, pos.y)) { this.canvas.style.cursor = 'move'; }
-      else { this.canvas.style.cursor = 'crosshair'; }
-      return;
-    }
-
-    const pos = this._pos(e);
-    const W = this.image.naturalWidth, H = this.image.naturalHeight;
-
-    if (this.mode === 'pan') {
-      this.panX = this.dragStart.panX + (pos.x - this.dragStart.x);
-      this.panY = this.dragStart.panY + (pos.y - this.dragStart.y);
-    } else if (this.mode === 'draw') {
-      const ip = this._c2i(pos.x, pos.y);
-      const sx = Math.max(0, Math.min(W, this.dragStart.imgStart.x));
-      const sy = Math.max(0, Math.min(H, this.dragStart.imgStart.y));
-      const ex = Math.max(0, Math.min(W, ip.x));
-      const ey = Math.max(0, Math.min(H, ip.y));
-      this.sel = {
-        x: Math.min(sx, ex), y: Math.min(sy, ey),
-        w: Math.abs(ex - sx), h: Math.abs(ey - sy),
-      };
-    } else if (this.mode === 'move') {
-      const di = this._c2i(pos.x, pos.y);
-      const si = this._c2i(this.dragStart.x, this.dragStart.y);
-      const dx = di.x - si.x, dy = di.y - si.y;
-      const s = this.dragStart.startSel;
-      this.sel = {
-        x: Math.max(0, Math.min(W-s.w, s.x+dx)),
-        y: Math.max(0, Math.min(H-s.h, s.y+dy)),
-        w: s.w, h: s.h,
-      };
-    } else if (this.mode === 'resize') {
-      const ip = this._c2i(pos.x, pos.y);
-      const si = this._c2i(this.dragStart.x, this.dragStart.y);
-      const dx = ip.x - si.x, dy = ip.y - si.y;
-      const id = this.dragStart.handleId;
-      let s = { ...this.dragStart.startSel };
-      if (id.includes('l')) { s.x=Math.max(0,Math.min(s.x+s.w-1,s.x+dx)); s.w=this.dragStart.startSel.x+this.dragStart.startSel.w-s.x; }
-      if (id.includes('r')) { s.w=Math.max(1,Math.min(W-s.x,s.w+dx)); }
-      if (id.includes('t')) { s.y=Math.max(0,Math.min(s.y+s.h-1,s.y+dy)); s.h=this.dragStart.startSel.y+this.dragStart.startSel.h-s.y; }
-      if (id.includes('b')) { s.h=Math.max(1,Math.min(H-s.y,s.h+dy)); }
-      this.sel = s;
-    }
+    // Convert CSS px to natural image px
+    this.sel = {
+      x: Math.round(minX / this.scale),
+      y: Math.round(minY / this.scale),
+      w: Math.round(width / this.scale),
+      h: Math.round(height / this.scale)
+    };
 
     this.render();
     this.onSelectionChange(this.sel);
   }
 
-  _mup() {
-    this.dragging = false;
-    this.mode = 'draw';
-    this.canvas.style.cursor = 'crosshair';
-    if (this.sel && (this.sel.w < 4 || this.sel.h < 4)) {
+  _handleMouseUp() {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+    // Require minimum selection of 8x8 px
+    if (this.sel && (this.sel.w < 8 || this.sel.h < 8)) {
       this.sel = null;
     }
     this.render();
     this.onSelectionChange(this.sel);
   }
 
-  _wheel(e) {
-    const pos = this._pos(e);
-    const delta = -e.deltaY * 0.001;
-    const newZoom = Math.min(10, Math.max(0.1, this.zoom * (1 + delta)));
-    const ratio = newZoom / this.zoom;
-    this.panX = pos.x - (pos.x - this.panX) * ratio;
-    this.panY = pos.y - (pos.y - this.panY) * ratio;
-    this.zoom = newZoom;
-    this._updateZoomDisplay();
+  _handleTouchStart(e) {
+    e.preventDefault();
+    const pos = this._getPos(e);
+    this.isDragging = true;
+    this.startPoint = pos;
+    this.sel = null;
     this.render();
+    this.onSelectionChange(null);
   }
 
-  zoomBy(factor) {
-    const cx = this.cssW/2, cy = this.cssH/2;
-    const newZoom = Math.min(10, Math.max(0.1, this.zoom * factor));
-    const ratio = newZoom / this.zoom;
-    this.panX = cx - (cx - this.panX) * ratio;
-    this.panY = cy - (cy - this.panY) * ratio;
-    this.zoom = newZoom;
-    this._updateZoomDisplay();
+  _handleTouchMove(e) {
+    if (!this.isDragging || !this.startPoint) return;
+    e.preventDefault();
+    const pos = this._getPos(e);
+
+    const minX = Math.min(this.startPoint.x, pos.x);
+    const minY = Math.min(this.startPoint.y, pos.y);
+    const width = Math.abs(pos.x - this.startPoint.x);
+    const height = Math.abs(pos.y - this.startPoint.y);
+
+    this.sel = {
+      x: Math.round(minX / this.scale),
+      y: Math.round(minY / this.scale),
+      w: Math.round(width / this.scale),
+      h: Math.round(height / this.scale)
+    };
+
     this.render();
+    this.onSelectionChange(this.sel);
   }
 
-  resetSel() { this.sel = null; this.render(); this.onSelectionChange(null); }
+  _handleTouchEnd(e) {
+    e.preventDefault();
+    this._handleMouseUp();
+  }
 
-  _updateZoomDisplay() {
-    els.zoomDisplay.textContent = Math.round(this.zoom * 100) + '%';
+  resetSel() {
+    this.sel = null;
+    this.isDragging = false;
+    this.startPoint = null;
+    this.render();
+    this.onSelectionChange(null);
   }
 
   render() {
@@ -1260,73 +1152,74 @@ class ManualCropper {
 
     ctx.save();
     ctx.clearRect(0, 0, cw, ch);
-
-    // High-DPI transform scaling
     ctx.scale(dpr, dpr);
 
-    // Background
-    ctx.fillStyle = '#0a0a12';
-    ctx.fillRect(0, 0, this.cssW, this.cssH);
-
-    // Draw full-resolution image crisply
-    const imgW = this.image.naturalWidth  * this.zoom;
-    const imgH = this.image.naturalHeight * this.zoom;
-
+    // 1. Draw full image fitted to canvas
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this.image, this.panX, this.panY, imgW, imgH);
+    ctx.drawImage(this.image, 0, 0, this.cssW, this.cssH);
 
+    // 2. If no selection, draw clean uncropped view
     if (!this.sel || this.sel.w < 2 || this.sel.h < 2) {
       ctx.restore();
       return;
     }
 
-    const sc = this._selCanvas();
-    const { x, y, w, h } = sc;
+    const sx = this.sel.x * this.scale;
+    const sy = this.sel.y * this.scale;
+    const sw = this.sel.w * this.scale;
+    const sh = this.sel.h * this.scale;
 
-    // Dim overlay
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    // 3. Dark dim overlay outside selection
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
     ctx.fillRect(0, 0, this.cssW, this.cssH);
 
-    // Clear selection area with crisp natural-resolution image
-    ctx.drawImage(this.image,
+    // 4. Bright clear un-dimmed image inside selection
+    ctx.drawImage(
+      this.image,
       this.sel.x, this.sel.y, this.sel.w, this.sel.h,
-      x, y, w, h
+      sx, sy, sw, sh
     );
 
-    // Marching-ants border
-    ctx.strokeStyle = '#7c3aed';
+    // 5. Bright selection box border
+    ctx.strokeStyle = '#a78bfa';
     ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.strokeRect(sx, sy, sw, sh);
+
+    // 6. Modern corner brackets
+    const cLen = Math.min(18, Math.min(sw, sh) / 3);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    // Top-Left
+    ctx.moveTo(sx, sy + cLen); ctx.lineTo(sx, sy); ctx.lineTo(sx + cLen, sy);
+    // Top-Right
+    ctx.moveTo(sx + sw - cLen, sy); ctx.lineTo(sx + sw, sy); ctx.lineTo(sx + sw, sy + cLen);
+    // Bottom-Left
+    ctx.moveTo(sx, sy + sh - cLen); ctx.lineTo(sx, sy + sh); ctx.lineTo(sx + cLen, sy + sh);
+    // Bottom-Right
+    ctx.moveTo(sx + sw - cLen, sy + sh); ctx.lineTo(sx + sw, sy + sh); ctx.lineTo(sx + sw, sy + sh - cLen);
+    ctx.stroke();
+
+    // 7. Dimension indicator pill badge
+    const badgeText = `${this.sel.w} × ${this.sel.h} px`;
+    ctx.font = '600 12px "JetBrains Mono", monospace';
+    const textW = ctx.measureText(badgeText).width;
+    const badgeW = textW + 16;
+    const badgeH = 22;
+    const badgeX = Math.max(6, Math.min(this.cssW - badgeW - 6, sx + (sw - badgeW) / 2));
+    const badgeY = sy > 28 ? sy - badgeH - 6 : sy + sh + 6;
+
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 6);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(167, 139, 250, 0.5)';
     ctx.lineWidth = 1;
-    ctx.setLineDash([6, 4]);
-    ctx.strokeRect(x+1, y+1, Math.max(1, w-2), Math.max(1, h-2));
-    ctx.setLineDash([]);
+    ctx.stroke();
 
-    // Handles
-    const H2 = this.HANDLE;
-    const handles = [
-      { cx:x,     cy:y     }, { cx:x+w/2, cy:y     }, { cx:x+w, cy:y     },
-      { cx:x,     cy:y+h/2 }, { cx:x+w,   cy:y+h/2 },
-      { cx:x,     cy:y+h   }, { cx:x+w/2, cy:y+h   }, { cx:x+w, cy:y+h   },
-    ];
-    handles.forEach(h => {
-      ctx.fillStyle   = '#7c3aed';
-      ctx.fillRect(h.cx-H2/2, h.cy-H2/2, H2, H2);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth   = 1.5;
-      ctx.strokeRect(h.cx-H2/2, h.cy-H2/2, H2, H2);
-    });
-
-    // Size label
-    const label = `${Math.round(this.sel.w)} × ${Math.round(this.sel.h)} px`;
-    ctx.font = '12px JetBrains Mono, monospace';
-    const tw = ctx.measureText(label).width;
-    const lx = Math.min(x + w - tw - 6, this.cssW - tw - 8);
-    const ly = y > 20 ? y - 6 : y + h + 16;
-    ctx.fillStyle = '#7c3aed';
-    ctx.fillText(label, lx, ly);
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(badgeText, badgeX + 8, badgeY + 15);
 
     ctx.restore();
   }
@@ -1335,13 +1228,27 @@ class ManualCropper {
     if (!this.sel || this.sel.w < 2 || this.sel.h < 2) return null;
     const { x, y, w, h } = this.sel;
     const oc = document.createElement('canvas');
-    oc.width  = Math.round(w);
+    oc.width = Math.round(w);
     oc.height = Math.round(h);
-    oc.getContext('2d').drawImage(this.image,
+    const ctx = oc.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(
+      this.image,
       Math.round(x), Math.round(y), Math.round(w), Math.round(h),
       0, 0, Math.round(w), Math.round(h)
     );
-    return oc.toDataURL('image/jpeg', 0.95);
+    return oc.toDataURL('image/jpeg', 0.98);
+  }
+
+  destroy() {
+    this.canvas.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mousemove', this._onMouseMove);
+    window.removeEventListener('mouseup', this._onMouseUp);
+
+    this.canvas.removeEventListener('touchstart', this._onTouchStart);
+    this.canvas.removeEventListener('touchmove', this._onTouchMove);
+    this.canvas.removeEventListener('touchend', this._onTouchEnd);
   }
 }
 
@@ -1861,19 +1768,20 @@ function bindEvents() {
 
   /* ── Manual crop ── */
   els.manualBackBtn.addEventListener('click', () => {
-    state.manualCropper = null;
+    if (state.manualCropper) { state.manualCropper.destroy(); state.manualCropper = null; }
     showPanel('crop-select');
   });
+  if (els.manualResetBtn) {
+    els.manualResetBtn.addEventListener('click', () => {
+      state.manualCropper?.resetSel();
+    });
+  }
   els.manualExtractBtn.addEventListener('click', () => {
     if (!state.manualCropper) return;
     const dataURL = state.manualCropper.getCroppedDataURL();
     if (!dataURL) { showToast('Please draw a selection first.', 'error'); return; }
     runExtraction(dataURL);
   });
-  els.zoomInBtn.addEventListener('click',  () => state.manualCropper?.zoomBy(1.3));
-  els.zoomOutBtn.addEventListener('click', () => state.manualCropper?.zoomBy(1/1.3));
-  els.zoomFitBtn.addEventListener('click', () => { state.manualCropper?.fitImage(); state.manualCropper?.render(); });
-  els.manualResetBtn.addEventListener('click', () => state.manualCropper?.resetSel());
 
   /* ── Result ── */
   els.copyBtn.addEventListener('click', copyCode);
@@ -2064,21 +1972,43 @@ function enterManualCrop() {
   if (!state.uploadedImg) return;
   showPanel('manual-crop');
 
-  // Update extract button state based on selection
+  // Reset button and hint state
   els.manualExtractBtn.disabled = true;
   els.manualExtractBtn.setAttribute('aria-disabled', 'true');
+  if (els.manualResetBtn) els.manualResetBtn.classList.add('hidden');
+  if (els.manualHintLbl) {
+    els.manualHintLbl.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 3v18"/><path d="M15 3v18"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+      Drag a selection box over the code area
+    `;
+  }
 
   requestAnimationFrame(() => {
+    if (state.manualCropper) state.manualCropper.destroy();
     state.manualCropper = new ManualCropper(
       els.manualCropCanvas,
       state.uploadedImg,
       (sel) => {
-        const hasValid = sel && sel.w > 4 && sel.h > 4;
+        const hasValid = sel && sel.w > 8 && sel.h > 8;
         els.manualExtractBtn.disabled = !hasValid;
         els.manualExtractBtn.setAttribute('aria-disabled', String(!hasValid));
-        els.manualHintLbl.textContent = hasValid
-          ? `${Math.round(sel.w)} × ${Math.round(sel.h)} px selected`
-          : 'Draw a selection';
+        if (hasValid) {
+          if (els.manualResetBtn) els.manualResetBtn.classList.remove('hidden');
+          if (els.manualHintLbl) {
+            els.manualHintLbl.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--success)"><polyline points="20 6 9 17 4 12"/></svg>
+              <strong>${sel.w} × ${sel.h} px</strong> selected — click Confirm Crop to extract
+            `;
+          }
+        } else {
+          if (els.manualResetBtn) els.manualResetBtn.classList.add('hidden');
+          if (els.manualHintLbl) {
+            els.manualHintLbl.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 3v18"/><path d="M15 3v18"/><path d="M3 9h18"/><path d="M3 15h18"/></svg>
+              Drag a selection box over the code area
+            `;
+          }
+        }
       }
     );
   });
