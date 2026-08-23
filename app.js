@@ -509,8 +509,20 @@ function updateUsageUI() {
 /* ═══════════════════════════════════════════════
    MODALS
 ═══════════════════════════════════════════════ */
-function openModal(el)  { el.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeModal(el) { el.classList.add('hidden');    document.body.style.overflow = ''; }
+function openModal(el)  {
+  if (!el) return;
+  el.classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+}
+function closeModal(el) {
+  if (!el) return;
+  el.classList.add('hidden');
+  document.body.style.overflow = '';
+  document.documentElement.style.overflow = '';
+  document.body.style.position = '';
+  document.body.style.touchAction = '';
+}
 
 function showError(msg, title = 'Extraction failed') {
   const titleEl = document.getElementById('error-modal-title');
@@ -601,22 +613,27 @@ class AutoCropper {
 
   _initCanvas() {
     const img = this.image;
-    const maxW = this.canvas.parentElement.clientWidth || 800;
+    const parent = this.canvas ? this.canvas.parentElement : null;
+    const maxW = (parent ? parent.clientWidth : 800) || 800;
     const maxH = 520;
-    const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
-    this.canvas.width  = Math.round(img.naturalWidth  * scale);
-    this.canvas.height = Math.round(img.naturalHeight * scale);
+    const scale = Math.min(maxW / (img.naturalWidth || 1), maxH / (img.naturalHeight || 1), 1);
+    if (this.canvas) {
+      this.canvas.width  = Math.round((img.naturalWidth || 800) * scale);
+      this.canvas.height = Math.round((img.naturalHeight || 600) * scale);
+    }
     this.scale = scale; // image px → canvas px
 
     this.detect();
-    this.render();
+    if (this.canvas && this.ctx) this.render();
 
-    this.canvas.addEventListener('mousedown',  this._onMouseDown);
-    window.addEventListener('mousemove', this._onMouseMove);
-    window.addEventListener('mouseup',   this._onMouseUp);
-    this.canvas.addEventListener('touchstart', this._onTouchStart, { passive: false });
-    this.canvas.addEventListener('touchmove',  this._onTouchMove,  { passive: false });
-    this.canvas.addEventListener('touchend',   this._onTouchEnd);
+    if (this.canvas && parent) {
+      this.canvas.addEventListener('mousedown',  this._onMouseDown);
+      window.addEventListener('mousemove', this._onMouseMove);
+      window.addEventListener('mouseup',   this._onMouseUp);
+      this.canvas.addEventListener('touchstart', this._onTouchStart, { passive: false });
+      this.canvas.addEventListener('touchmove',  this._onTouchMove,  { passive: false });
+      this.canvas.addEventListener('touchend',   this._onTouchEnd);
+    }
   }
 
   detect() {
@@ -894,7 +911,9 @@ class AutoCropper {
 
   /** Crop the image and return a data URL */
   getCroppedDataURL() {
+    if (!this.rect || !this.image) return null;
     const { x, y, w, h } = this.rect;
+    if (!w || !h || w < 2 || h < 2) return null;
     const oc = document.createElement('canvas');
     oc.width = w; oc.height = h;
     oc.getContext('2d').drawImage(this.image, x, y, w, h, 0, 0, w, h);
@@ -902,12 +921,27 @@ class AutoCropper {
   }
 
   destroy() {
-    this.canvas.removeEventListener('mousedown',  this._onMouseDown);
+    if (this.canvas) {
+      this.canvas.removeEventListener('mousedown',  this._onMouseDown);
+      this.canvas.removeEventListener('touchstart', this._onTouchStart);
+      this.canvas.removeEventListener('touchmove',  this._onTouchMove);
+      this.canvas.removeEventListener('touchend',   this._onTouchEnd);
+    }
     window.removeEventListener('mousemove', this._onMouseMove);
     window.removeEventListener('mouseup',   this._onMouseUp);
-    this.canvas.removeEventListener('touchstart', this._onTouchStart);
-    this.canvas.removeEventListener('touchmove',  this._onTouchMove);
-    this.canvas.removeEventListener('touchend',   this._onTouchEnd);
+  }
+}
+
+/** Fail-safe helper for silent Auto Crop */
+function autoCropImage(img) {
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+  try {
+    const dummyCanvas = document.createElement('canvas');
+    const cropper = new AutoCropper(dummyCanvas, img);
+    return cropper.getCroppedDataURL();
+  } catch (err) {
+    console.warn('Auto crop detection fallback to full image:', err);
+    return null;
   }
 }
 
@@ -1892,14 +1926,9 @@ function bindEvents() {
 function enterAutoCrop() {
   if (!state.uploadedImg) return;
   // Silent Auto Crop — detect code region, crop offscreen, and extract immediately with 0 clicks
-  const dummyCanvas = document.createElement('canvas');
-  const cropper = new AutoCropper(dummyCanvas, state.uploadedImg);
-  const dataURL = cropper.getCroppedDataURL();
-  if (dataURL) {
-    runExtraction(dataURL);
-  } else {
-    runExtraction(state.uploadedDataURL);
-  }
+  const croppedDataURL = autoCropImage(state.uploadedImg);
+  const dataURL = croppedDataURL || state.uploadedDataURL;
+  runExtraction(dataURL);
 }
 
 function enterManualCrop() {

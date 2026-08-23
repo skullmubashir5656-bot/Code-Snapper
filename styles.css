@@ -1053,80 +1053,104 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 /* ============================================================
    RESPONSIVE — Mobile (768px)
    ============================================================ */
+/* ============================================================
+   RESPONSIVE — Mobile (768px & smaller)
+   ============================================================ */
 @media (max-width: 768px) {
   .nav-link, .nav-cta, .nav-signin-btn { display: none; }
   .nav-key-btn { display: none; }
-  .menu-toggle { display: flex; align-items: center; justify-content: center; }
+  .menu-toggle {
+    display: flex; align-items: center; justify-content: center;
+    min-width: 44px; min-height: 44px;
+  }
 
   .hero-title { letter-spacing: -.03em; }
-  .crop-options { grid-template-columns: 1fr; }
+  .crop-options { grid-template-columns: 1fr; gap: 14px; }
+  .crop-card { width: 100%; box-sizing: border-box; padding: 20px; }
 
-  /* Result panel: stack topbar vertically, full-width buttons */
+  /* Result panel: sticky topbar with clean button grid */
   .result-topbar {
+    position: sticky; top: 60px; z-index: 20;
     flex-direction: column; align-items: stretch;
-    position: sticky; top: 56px;
+    padding: 12px; gap: 10px; width: 100%; box-sizing: border-box;
   }
-  .result-meta { justify-content: space-between; }
+  .result-meta { justify-content: space-between; width: 100%; }
   .result-actions {
-    flex-wrap: wrap; gap: 8px;
-    /* Make all buttons full width on mobile for easy tapping */
+    display: flex; flex-direction: column; gap: 8px; width: 100%;
   }
   .result-actions .btn {
-    flex: 1; min-width: 44px; justify-content: center;
-    min-height: 48px;
+    width: 100%; min-height: 48px; font-size: 14px;
+    justify-content: center; box-sizing: border-box;
   }
-  .crop-actions .btn { min-height: 48px; }
-  .modal-actions .btn { min-height: 48px; font-size: 15px; }
+  #copy-btn {
+    width: 100%; min-height: 48px; font-size: 15px; font-weight: 700;
+  }
+
+  /* Manual crop toolbar & footer */
+  .manual-toolbar {
+    padding: 8px 10px; gap: 6px; flex-wrap: wrap;
+    justify-content: space-between; width: 100%; box-sizing: border-box;
+  }
+  .manual-toolbar .btn-icon {
+    width: 44px; height: 44px; min-width: 44px; min-height: 44px;
+  }
+
+  .crop-footer {
+    flex-direction: column; align-items: stretch; gap: 12px;
+    margin-top: 16px; width: 100%; box-sizing: border-box;
+  }
+  .crop-actions {
+    flex-direction: column; width: 100%; gap: 10px;
+  }
+  .crop-actions .btn {
+    width: 100%; min-height: 48px; font-size: 15px; justify-content: center;
+  }
+
+  /* Modals on mobile viewports */
+  .modal-backdrop { padding: 16px; align-items: center; }
+  .modal {
+    padding: 24px 20px; max-height: 85vh; overflow-y: auto;
+    -webkit-overflow-scrolling: touch; width: 100%; border-radius: var(--r-xl);
+    box-sizing: border-box;
+  }
+  .modal-actions .btn { min-height: 48px; font-size: 15px; width: 100%; justify-content: center; }
+
   /* Hamburger menu: show sign-in inside drawer, hide pill from header */
   .user-pill { display: none; }
 
-  /* Code block: smaller font, still horizontally scrollable */
+  /* Code block: scrollable horizontally, readable text */
   .code-scroll pre {
-    font-size: 12px !important;
+    font-size: 12.5px !important;
     padding: 16px !important;
   }
 
   .privacy-grid { grid-template-columns: 1fr; }
   .footer-inner { flex-direction: column; align-items: center; text-align: center; }
-  .modal { padding: 24px; }
-  .upload-area { padding: 36px 20px; }
-  .crop-footer { flex-direction: column; align-items: stretch; }
-  .crop-actions { flex-direction: column; }
-  .crop-actions .btn { justify-content: center; min-height: 44px; }
-  .manual-toolbar { gap: 6px; }
+  .upload-area { padding: 32px 18px; }
 
-  /* Larger tap targets for crop toolbar buttons */
-  .manual-toolbar .btn-icon { width: 40px; height: 40px; }
-
-  /* Canvas wraps: limit height on mobile so canvas doesn't overflow */
-  #auto-crop-canvas, #manual-crop-canvas { max-height: 420px; }
+  /* Canvas wraps: limit max height so controls stay visible on phone screens */
+  #auto-crop-canvas, #manual-crop-canvas { max-height: 380px; }
 }
 
 @media (max-width: 480px) {
   .header-inner { padding: 0 16px; }
   .container { padding: 0 16px; }
-  #app-section { padding: 24px 16px 60px; }
-  .about-wrap { padding: 80px 16px 60px; }
-  .modal { border-radius: var(--r-xl); }
+  #app-section { padding: 20px 14px 60px; }
+  .about-wrap { padding: 80px 14px 60px; }
   .upload-meta { flex-direction: column; gap: 8px; }
   .upload-shortcuts { flex-direction: column; align-items: center; }
 
-  #hero-panel { padding: 60px 16px 40px; }
+  #hero-panel { padding: 50px 14px 36px; }
   #upload-zone { width: 100%; }
-  .hero-subtitle { font-size: 15px; }
+  .hero-subtitle { font-size: 14.5px; }
 
-  /* Result topbar: stack everything, full-width copy button */
-  .result-topbar { top: 56px; padding: 10px 12px; gap: 8px; }
-  .result-actions .btn { min-height: 48px; font-size: 15px; }
-  #copy-btn { width: 100%; }
-
-  /* Code: even more compact on tiny screens */
-  .code-scroll pre { font-size: 11.5px !important; padding: 14px 12px !important; }
+  /* Code viewer adjustments for iPhone SE (375px) */
+  .code-scroll pre { font-size: 11.5px !important; padding: 14px 10px !important; }
   .code-titlebar { padding: 8px 12px; }
 
-  /* Upload area: bigger touch target */
-  .upload-area { padding: 32px 16px; min-height: 180px; }
-  .upload-icon-wrap { width: 52px; height: 52px; }
+  /* Upload area touch target */
+  .upload-area { padding: 28px 14px; min-height: 170px; }
+  .upload-icon-wrap { width: 48px; height: 48px; }
 }
 
 /* ============================================================
