@@ -1145,9 +1145,10 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     font-size: 16px;
   }
 
-  /* Hero Section */
+  /* Hero Section — clearance for fixed 60px navbar */
   #hero-panel {
-    padding: 40px 0 28px;
+    padding: 84px 0 28px !important;
+    scroll-margin-top: 72px;
     text-align: center;
     width: 100%;
     box-sizing: border-box;
@@ -1180,6 +1181,24 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   }
   .upload-shortcuts {
     display: none; /* keyboard shortcuts hidden on mobile touch devices */
+  }
+  .upload-meta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 6px 12px !important;
+    font-size: 11.5px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    text-align: center !important;
+  }
+  .upload-meta span {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    white-space: nowrap !important;
+    font-size: 11.5px !important;
   }
   .hero-auth-callout {
     width: 100%;
@@ -1267,11 +1286,19 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     box-sizing: border-box;
   }
 
-  /* Processing Panel */
+  /* Processing Panel — Vertically centered in viewport with no dead space */
   #processing-panel {
-    min-height: 340px;
-    gap: 24px;
-    padding: 20px 0;
+    min-height: calc(100vh - 120px) !important;
+    min-height: calc(100dvh - 120px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+    gap: 28px !important;
+    padding: 20px 0 !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
   }
   .processing-title {
     font-size: 20px;
