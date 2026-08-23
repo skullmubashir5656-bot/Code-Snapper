@@ -1,38 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* ============================================================
-   RESET & BASE
+   RESET & BASE (STRICT DARK THEME FOR ALL DEVICES)
    ============================================================ */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  -webkit-tap-highlight-color: transparent; /* Removes tap highlight flash on Android & iOS */
-}
-html {
-  scroll-behavior: smooth;
-  scroll-padding-top: 72px; /* clear fixed 60px header + breathing room */
-}
+:root {
+  color-scheme: dark;
 
-button, input, select, textarea {
-  font-family: inherit;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-body {
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  font-feature-settings: 'cv02','cv03','cv04','cv11';
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: var(--bg);
-  color: var(--txt);
-  line-height: 1.6;
-  min-height: 100vh;
-  min-height: 100dvh; /* Dynamic viewport height for Android & iOS mobile browsers */
-  overflow-x: hidden;
-  touch-action: manipulation;
-}
   /* Core Palette */
   --bg:         #07090f;
   --bg-2:       #0d1117;
@@ -53,19 +26,13 @@ body {
   --violet:     #a78bfa;
   --violet-d:   #c4b5fd;
 
-  /* Semantics — verified AA contrast vs dark backgrounds */
-  --success:    #22c98a;   /* was #10b981 @ 4.3:1; lifted to 5.8:1 */
+  /* Semantics */
+  --success:    #22c98a;
   --warning:    #f59e0b;
-  --danger:     #f36c6c;   /* was #ef4444 @ 4.1:1; lifted to 5.4:1 */
+  --danger:     #f36c6c;
   --info:       #38bdf8;
 
-  /* Text
-     Contrast ratios against --bg (#07090f):
-       --txt    #eef2ff  ~15.2:1  ✓ AA+
-       --txt-2  #a8b8cc  ~6.7:1   ✓ AA (was #94a3b8 @ 5.2:1, lifted for safety)
-       --txt-3  #7a8fa8  ~4.6:1   ✓ AA (was #4b5a6e @ 2.1:1 — FAIL)
-       --txt-4  #5a6b82  ~3.1:1   ✓ AA large (was #2e3a4e @ 1.4:1 — FAIL)
-  */
+  /* Text */
   --txt:        #eef2ff;
   --txt-2:      #a8b8cc;
   --txt-3:      #7a8fa8;
@@ -99,15 +66,41 @@ body {
   --t-ease:   .25s ease;
 }
 
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  color-scheme: dark !important;
+  background-color: #07090f !important;
+  color: #eef2ff !important;
+  scroll-behavior: smooth;
+  scroll-padding-top: 72px;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  color-scheme: dark !important;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   font-feature-settings: 'cv02','cv03','cv04','cv11';
   -webkit-font-smoothing: antialiased;
-  background-color: var(--bg);
-  color: var(--txt);
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: dark !important;
+  background-color: #07090f !important;
+  color: #eef2ff !important;
   line-height: 1.6;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
+  touch-action: manipulation;
 }
 
 /* Ambient glow background */
@@ -115,7 +108,7 @@ body::before {
   content: '';
   position: fixed;
   inset: 0;
-  background: var(--g-bg);
+  background: radial-gradient(ellipse 900px 700px at 50% -10%, rgba(124,58,237,.11) 0%, transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
