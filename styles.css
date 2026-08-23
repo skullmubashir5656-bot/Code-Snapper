@@ -79,6 +79,8 @@ html {
   color: #eef2ff !important;
   scroll-behavior: smooth;
   scroll-padding-top: 72px;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
 }
 
 button, input, select, textarea {
@@ -99,7 +101,8 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   min-height: 100dvh;
-  overflow-x: hidden;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
   touch-action: manipulation;
 }
 
@@ -368,11 +371,12 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 
 .upload-meta {
   display: flex; justify-content: center; align-items: center;
-  gap: 20px; margin-top: 18px;
+  flex-wrap: wrap; gap: 10px 18px; margin-top: 18px;
   font-size: 12px; color: var(--txt-3); font-weight: 500;
+  width: 100%; box-sizing: border-box;
 }
-.upload-meta span { display: flex; align-items: center; gap: 5px; }
-.upload-meta svg { width: 12px; height: 12px; }
+.upload-meta span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.upload-meta svg { width: 12px; height: 12px; flex-shrink: 0; }
 
 .usage-bar-wrap { margin-top: 16px; text-align: center; }
 
@@ -629,9 +633,10 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 
 /* Code block */
 .code-window {
-  border-radius: var(--r-xl); overflow: hidden;
+  border-radius: var(--r-xl);
   border: 1px solid var(--border-2); background: #0d1117;
   box-shadow: var(--sh-md);
+  width: 100%; box-sizing: border-box;
 }
 .code-titlebar {
   display: flex; align-items: center; justify-content: space-between;
@@ -644,12 +649,15 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .dot-r { background: #ff5f57; } .dot-y { background: #ffbd2e; } .dot-g { background: #28ca41; }
 .code-filename { font-size: 12px; color: var(--txt-2); font-family: 'JetBrains Mono', monospace; font-weight: 500; }
 
-/* Code scroll area — NO max-height, NO overflow:auto on the block itself.
-   The page scrolls naturally. Horizontal overflow handled per-line. */
+/* Code scroll area — Horizontal scroll for long code lines */
 .code-scroll {
   position: relative;
-  overflow-x: auto;          /* horizontal scroll for very long lines */
+  overflow-x: auto !important;
+  overflow-y: visible !important;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  width: 100%;
+  box-sizing: border-box;
 }
 .code-scroll pre {
   margin: 0 !important; border-radius: 0 !important;
@@ -658,13 +666,19 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   font-family: 'JetBrains Mono', monospace !important;
   font-size: 13px !important; line-height: 1.75 !important;
   tab-size: 2;
-  /* Don't wrap code — let it scroll horizontally */
   white-space: pre !important;
-  min-width: max-content;
+  word-break: normal !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
+  width: max-content;
+  min-width: 100%;
 }
 .code-scroll pre code {
   font-size: 13px !important;
   white-space: pre !important;
+  word-break: normal !important;
+  word-wrap: normal !important;
+  overflow-wrap: normal !important;
 }
 
 /* Ambiguity warnings */
@@ -1318,24 +1332,40 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     width: 100%;
     box-sizing: border-box;
     border-radius: var(--r-xl);
-    overflow: hidden;
+    overflow: visible !important;
   }
   .code-titlebar {
     padding: 10px 14px;
+    border-top-left-radius: var(--r-xl);
+    border-top-right-radius: var(--r-xl);
   }
   .code-scroll {
     width: 100%;
+    max-width: 100%;
     box-sizing: border-box;
     overflow-x: auto !important;
     overflow-y: visible !important;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-x pan-y;
+    border-bottom-left-radius: var(--r-xl);
+    border-bottom-right-radius: var(--r-xl);
   }
   .code-scroll pre {
     font-size: 12.5px !important;
     padding: 16px 14px !important;
     line-height: 1.65 !important;
     white-space: pre !important;
-    min-width: max-content;
+    word-break: normal !important;
+    word-wrap: normal !important;
+    overflow-wrap: normal !important;
+    width: max-content;
+    min-width: 100%;
+  }
+  .code-scroll pre code {
+    white-space: pre !important;
+    word-break: normal !important;
+    word-wrap: normal !important;
+    overflow-wrap: normal !important;
   }
 
   /* Ambiguity Warnings, Reverify & Tip Callouts */
