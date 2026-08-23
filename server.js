@@ -151,6 +151,14 @@ db.exec(`
     lang TEXT NOT NULL DEFAULT 'auto',
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    description TEXT,
+    timestamp TEXT NOT NULL,
+    user_email TEXT,
+    page TEXT
+  );
 `);
 
 // Auto-migrate legacy users.json if present
@@ -336,6 +344,99 @@ app.delete('/api/history/:id', authenticate, (req, res) => {
     return res.status(401).json({ error: 'Authentication required.' });
   db.prepare('DELETE FROM extraction_history WHERE id = ? AND user_email = ?').run(req.params.id, req.user.email);
   res.json({ status: 'ok' });
+});
+
+/* ─── POST /api/feedback ─────────────────────────────────────────────────── */
+app.post('/api/feedback', authenticate, (req, res) => {
+  try {
+    const { type, description, page } = req.body || {};
+    if (!type || typeof type !== 'string') {
+      return res.status(400).json({ error: 'Issue type is required.' });
+    }
+
+    const validTypes = ['Wrong code extracted', 'Missing characters', "Crop didn't work", 'Other'];
+    const issueType = validTypes.includes(type.trim()) ? type.trim() : 'Other';
+    const descClean = (description || '').trim().slice(0, 500);
+    const userEmail = req.user ? req.user.email : null;
+    const pageClean = (page || 'index.html').trim().slice(0, 100);
+    const now = new Date().toISOString();
+
+    const stmt = db.prepare(`
+      INSERT INTO feedback (type, description, timestamp, user_email, page)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    const result = stmt.run(issueType, descClean, now, userEmail, pageClean);
+
+    console.log(`[Feedback] New report #${result.lastInsertRowid}: [${issueType}] by ${userEmail || 'Anonymous'}`);
+    res.json({ ok: true, id: result.lastInsertRowid });
+  } catch (err) {
+    console.error('[Feedback] Error saving feedback:', err.message);
+    res.status(500).json({ error: 'Failed to save feedback.' });
+  }
+});
+
+/* ─── Admin Config & Auth ────────────────────────────────────────────────── */
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'codesnapper_admin_2026!';
+
+function verifyAdminAuth(req) {
+  const authHeader = req.headers['authorization'];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7);
+    if (token === ADMIN_PASSWORD) return true;
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      if (decoded && decoded.role === 'admin') return true;
+    } catch {}
+  }
+  const keyHeader = req.headers['x-admin-key'];
+  if (keyHeader === ADMIN_PASSWORD) return true;
+  if (req.query && req.query.key === ADMIN_PASSWORD) return true;
+  return false;
+}
+
+/* ─── POST /api/admin/login ──────────────────────────────────────────────── */
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Invalid admin password.' });
+  }
+  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '7d' });
+  res.json({ ok: true, token });
+});
+
+/* ─── GET /api/admin/feedback ────────────────────────────────────────────── */
+app.get('/api/admin/feedback', (req, res) => {
+  if (!verifyAdminAuth(req)) {
+    return res.status(401).json({ error: 'Admin authentication required.' });
+  }
+  const rows = db.prepare(`
+    SELECT * FROM feedback
+    ORDER BY id DESC
+  `).all();
+  res.json({ feedback: rows });
+});
+
+/* ─── DELETE /api/admin/feedback/:id ─────────────────────────────────────── */
+app.delete('/api/admin/feedback/:id', (req, res) => {
+  if (!verifyAdminAuth(req)) {
+    return res.status(401).json({ error: 'Admin authentication required.' });
+  }
+  db.prepare('DELETE FROM feedback WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+/* ─── POST /api/admin/feedback/clear ─────────────────────────────────────── */
+app.post('/api/admin/feedback/clear', (req, res) => {
+  if (!verifyAdminAuth(req)) {
+    return res.status(401).json({ error: 'Admin authentication required.' });
+  }
+  db.prepare('DELETE FROM feedback').run();
+  res.json({ ok: true });
+});
+
+/* ─── GET /admin & /admin/feedback ───────────────────────────────────────── */
+app.get(['/admin', '/admin/feedback'], (_req, res) => {
+  res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
 /* ─── POST /api/auth/register ────────────────────────────────────────────── */

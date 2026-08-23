@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feedback Admin — CodeSnapper</title>
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#7c3aed">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+
+  <style>
+    .admin-wrap { max-width: 1200px; margin: 0 auto; padding: 80px 24px 60px; }
+    .admin-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 28px; }
+    .admin-title { font-size: 26px; font-weight: 800; }
+    .admin-title span { color: var(--violet-d); }
+    
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .stat-card { background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r-lg); padding: 18px 20px; }
+    .stat-label { font-size: 12px; color: var(--txt-3); text-transform: uppercase; font-weight: 700; letter-spacing: .6px; margin-bottom: 6px; }
+    .stat-val { font-size: 28px; font-weight: 800; color: #ffffff; }
+
+    .admin-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+    .admin-search { display: flex; gap: 10px; flex: 1; max-width: 400px; }
+    .admin-select { background: var(--bg-2); border: 1px solid var(--border-2); color: var(--txt); padding: 8px 12px; border-radius: var(--r-md); font-size: 13.5px; outline: none; }
+    .admin-select:focus { border-color: var(--violet); }
+
+    .table-card { background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r-xl); overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,.4); }
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+    .admin-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13.5px; }
+    .admin-table th { background: var(--bg-2); padding: 14px 16px; color: #9ca3af; font-size: 12px; text-transform: uppercase; letter-spacing: .6px; font-weight: 700; border-bottom: 1px solid var(--border); }
+    .admin-table td { padding: 14px 16px; border-bottom: 1px solid var(--border); color: #cbd5e1; vertical-align: top; }
+    .admin-table tr:hover td { background: rgba(255,255,255,.02); }
+
+    .badge-type { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--r-full); font-size: 11.5px; font-weight: 700; text-transform: capitalize; white-space: nowrap; }
+    .type-wrong { background: rgba(239,68,68,.15); color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+    .type-missing { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+    .type-crop { background: rgba(139,92,246,.15); color: #c4b5fd; border: 1px solid rgba(139,92,246,.3); }
+    .type-other { background: rgba(148,163,184,.15); color: #94a3b8; border: 1px solid rgba(148,163,184,.3); }
+
+    .desc-text { max-width: 420px; word-break: break-word; color: #e2e8f0; line-height: 1.5; }
+    .empty-state { padding: 60px 20px; text-align: center; color: var(--txt-3); }
+
+    /* Login Modal */
+    #admin-login-modal { position: fixed; inset: 0; background: rgba(7,9,15,.9); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; z-index: 999; padding: 20px; }
+    .admin-login-box { background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r-xl); padding: 36px 32px; width: 100%; max-width: 420px; box-shadow: 0 16px 48px rgba(0,0,0,.6); text-align: center; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header" role="banner">
+  <div class="container header-inner">
+    <a href="/" class="logo" aria-label="CodeSnapper Home">
+      <div class="logo-img"><img src="/logo.png" alt="CodeSnapper Logo"></div>
+      <span class="logo-wordmark">CodeSnapper</span>
+    </a>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="font-size:12px;background:rgba(124,58,237,.2);border:1px solid rgba(167,139,250,.4);color:var(--violet-d);padding:4px 10px;border-radius:var(--r-full);font-weight:700">Admin Mode</span>
+      <button class="btn btn-ghost btn-sm" id="admin-logout-btn" onclick="logoutAdmin()">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<!-- Main Admin Dashboard -->
+<main class="admin-wrap">
+  <div class="admin-header">
+    <div>
+      <h1 class="admin-title">User Feedback &amp; <span>Bug Reports</span></h1>
+      <p style="font-size:14px;color:#9ca3af;margin-top:4px">Stored in SQLite database &middot; Direct issue stream</p>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-secondary btn-sm" onclick="loadFeedback()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Refresh
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="clearAllFeedback()" style="color:#ef4444">Clear All</button>
+    </div>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="stat-cards">
+    <div class="stat-card">
+      <p class="stat-label">Total Reports</p>
+      <p class="stat-val" id="stat-total">0</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Wrong Code</p>
+      <p class="stat-val" id="stat-wrong" style="color:#f87171">0</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Missing Chars</p>
+      <p class="stat-val" id="stat-missing" style="color:#fbbf24">0</p>
+    </div>
+    <div class="stat-card">
+      <p class="stat-label">Crop Issues</p>
+      <p class="stat-val" id="stat-crop" style="color:#c4b5fd">0</p>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="admin-toolbar">
+    <div class="admin-search">
+      <input type="text" id="filter-search" class="input" placeholder="Search description, email, or page..." oninput="renderTable()" style="font-size:13.5px;min-height:38px">
+      <select id="filter-type" class="admin-select" onchange="renderTable()">
+        <option value="">All Types</option>
+        <option value="Wrong code extracted">Wrong code extracted</option>
+        <option value="Missing characters">Missing characters</option>
+        <option value="Crop didn't work">Crop didn't work</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div id="filter-count" style="font-size:13px;color:#9ca3af;font-weight:600">Showing 0 reports</div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-card">
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th style="width:50px">ID</th>
+            <th style="width:160px">Type</th>
+            <th>Description</th>
+            <th style="width:180px">User</th>
+            <th style="width:120px">Page</th>
+            <th style="width:170px">Timestamp</th>
+            <th style="width:60px;text-align:right">Action</th>
+          </tr>
+        </thead>
+        <tbody id="feedback-tbody">
+          <tr><td colspan="7" class="empty-state">Loading feedback reports…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Login Modal -->
+<div id="admin-login-modal" class="hidden">
+  <div class="admin-login-box">
+    <div style="width:48px;height:48px;border-radius:var(--r-md);background:var(--g-soft);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;border:1px solid rgba(124,58,237,.3)">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;color:var(--violet-d)"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </div>
+    <h2 style="font-size:22px;font-weight:800;color:#ffffff;margin-bottom:6px">Admin Access</h2>
+    <p style="font-size:13.5px;color:#9ca3af;margin-bottom:24px">Enter your admin password to view feedback</p>
+    
+    <form onsubmit="handleAdminLogin(event)" style="display:flex;flex-direction:column;gap:14px">
+      <input type="password" id="admin-pw-input" class="input" placeholder="Admin password" required autofocus style="text-align:center;font-size:15px">
+      <div id="admin-login-err" style="color:#ef4444;font-size:13px;display:none"></div>
+      <button type="submit" class="btn btn-primary" style="justify-content:center;width:100%">Unlock Dashboard</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  let allReports = [];
+  const STORAGE_KEY = 'cs_admin_token';
+
+  function getAdminToken() {
+    return sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
+  }
+
+  function setAdminToken(t) {
+    sessionStorage.setItem(STORAGE_KEY, t);
+  }
+
+  function logoutAdmin() {
+    sessionStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    showLoginModal();
+  }
+
+  function showLoginModal() {
+    document.getElementById('admin-login-modal').classList.remove('hidden');
+    document.getElementById('admin-login-modal').style.display = 'flex';
+  }
+
+  function hideLoginModal() {
+    document.getElementById('admin-login-modal').classList.add('hidden');
+    document.getElementById('admin-login-modal').style.display = 'none';
+  }
+
+  async function handleAdminLogin(e) {
+    e.preventDefault();
+    const pw = document.getElementById('admin-pw-input').value;
+    const errEl = document.getElementById('admin-login-err');
+    errEl.style.display = 'none';
+
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+
+      setAdminToken(data.token);
+      hideLoginModal();
+      loadFeedback();
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.style.display = 'block';
+    }
+  }
+
+  function getTypeBadge(type) {
+    const t = (type || '').toLowerCase();
+    if (t.includes('wrong')) return `<span class="badge-type type-wrong">Wrong code</span>`;
+    if (t.includes('missing')) return `<span class="badge-type type-missing">Missing chars</span>`;
+    if (t.includes('crop')) return `<span class="badge-type type-crop">Crop issue</span>`;
+    return `<span class="badge-type type-other">${escapeHtml(type || 'Other')}</span>`;
+  }
+
+  function escapeHtml(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function formatTime(isoStr) {
+    if (!isoStr) return '—';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
+             d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return isoStr;
+    }
+  }
+
+  async function loadFeedback() {
+    const token = getAdminToken();
+    if (!token) {
+      showLoginModal();
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/feedback', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        logoutAdmin();
+        return;
+      }
+      const data = await res.json();
+      allReports = data.feedback || [];
+      updateStats();
+      renderTable();
+    } catch (err) {
+      console.error('Failed to load feedback:', err);
+    }
+  }
+
+  function updateStats() {
+    document.getElementById('stat-total').textContent = allReports.length;
+    document.getElementById('stat-wrong').textContent = allReports.filter(r => (r.type || '').toLowerCase().includes('wrong')).length;
+    document.getElementById('stat-missing').textContent = allReports.filter(r => (r.type || '').toLowerCase().includes('missing')).length;
+    document.getElementById('stat-crop').textContent = allReports.filter(r => (r.type || '').toLowerCase().includes('crop')).length;
+  }
+
+  function renderTable() {
+    const search = document.getElementById('filter-search').value.toLowerCase().trim();
+    const typeFilter = document.getElementById('filter-type').value;
+
+    const filtered = allReports.filter(r => {
+      if (typeFilter && r.type !== typeFilter) return false;
+      if (search) {
+        const text = `${r.description || ''} ${r.user_email || ''} ${r.page || ''} ${r.type || ''}`.toLowerCase();
+        if (!text.includes(search)) return false;
+      }
+      return true;
+    });
+
+    document.getElementById('filter-count').textContent = `Showing ${filtered.length} of ${allReports.length} reports`;
+
+    const tbody = document.getElementById('feedback-tbody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty-state">No feedback reports found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(r => `
+      <tr>
+        <td style="color:#9ca3af;font-family:monospace;font-weight:600">#${r.id}</td>
+        <td>${getTypeBadge(r.type)}</td>
+        <td>
+          <div class="desc-text">${r.description ? escapeHtml(r.description) : '<span style="color:#64748b;font-style:italic">No description provided</span>'}</div>
+        </td>
+        <td>
+          ${r.user_email ? `<span style="color:var(--violet-d);font-weight:600">${escapeHtml(r.user_email)}</span>` : '<span style="color:#94a3b8;font-weight:500">Anonymous</span>'}
+        </td>
+        <td style="font-family:monospace;font-size:12px;color:#94a3b8">${escapeHtml(r.page || 'index.html')}</td>
+        <td style="font-size:12.5px;color:#9ca3af;white-space:nowrap">${formatTime(r.timestamp)}</td>
+        <td style="text-align:right">
+          <button class="btn btn-ghost btn-sm" onclick="deleteFeedback(${r.id})" style="color:#f87171;padding:4px 8px" title="Delete report">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          </button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async function deleteFeedback(id) {
+    if (!confirm(`Delete feedback report #${id}?`)) return;
+    const token = getAdminToken();
+    try {
+      const res = await fetch(`/api/admin/feedback/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        allReports = allReports.filter(r => r.id !== id);
+        updateStats();
+        renderTable();
+      }
+    } catch (err) {
+      alert('Failed to delete report: ' + err.message);
+    }
+  }
+
+  async function clearAllFeedback() {
+    if (!confirm('Are you sure you want to delete ALL feedback reports? This cannot be undone.')) return;
+    const token = getAdminToken();
+    try {
+      const res = await fetch('/api/admin/feedback/clear', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        allReports = [];
+        updateStats();
+        renderTable();
+      }
+    } catch (err) {
+      alert('Failed to clear reports: ' + err.message);
+    }
+  }
+
+  // Check URL query param ?key=
+  const urlParams = new URLSearchParams(window.location.search);
+  const queryKey = urlParams.get('key');
+  if (queryKey) {
+    setAdminToken(queryKey);
+  }
+
+  // Init
+  loadFeedback();
+</script>
+
+</body>
+</html>

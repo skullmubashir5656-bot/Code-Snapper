@@ -428,11 +428,15 @@
       </p>
     </div>
 
-    <!-- Extract another -->
-    <div class="result-cta">
+    <!-- Actions / CTAs -->
+    <div class="result-cta" style="display:flex;justify-content:center;gap:12px;flex-wrap:wrap">
       <button class="btn btn-primary btn-lg" id="extract-another-btn">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Extract Another
+      </button>
+      <button class="btn btn-secondary btn-lg" id="report-issue-result-btn" style="color:var(--txt-2)">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Report an Issue
       </button>
     </div>
   </div>
@@ -457,6 +461,7 @@
       <a href="about.html#privacy" class="footer-link">Privacy</a>
       <a href="terms.html" class="footer-link">Terms</a>
       <a href="contact.html" class="footer-link">Contact</a>
+      <a href="#report-issue" class="footer-link" id="footer-report-link">Report an Issue</a>
     </nav>
   </div>
 </footer>
@@ -569,6 +574,48 @@
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- Feedback / Bug Report Modal -->
+<div id="feedback-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-modal-title">
+  <div class="modal">
+    <button class="btn btn-ghost btn-icon modal-close-btn" id="feedback-modal-close" aria-label="Close">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="modal-icon-wrap" style="background:rgba(124,58,237,.15)" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px;color:var(--violet-d)"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <h2 class="modal-title" id="feedback-modal-title">Report an Issue</h2>
+    <p class="modal-desc">Tell us what went wrong. No login required &middot; we review every report.</p>
+
+    <form id="feedback-form" style="text-align:left;margin-top:16px">
+      <div class="field">
+        <label class="field-label" for="feedback-type">What type of issue?</label>
+        <select id="feedback-type" class="input" required style="cursor:pointer;font-size:14px">
+          <option value="Wrong code extracted">Wrong code extracted</option>
+          <option value="Missing characters">Missing characters</option>
+          <option value="Crop didn't work">Crop didn't work</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <label class="field-label" for="feedback-desc" style="margin-bottom:0">Describe the issue <span class="field-hint">(optional)</span></label>
+          <span id="feedback-char-count" style="font-size:12px;color:var(--txt-3);font-family:monospace">0 / 500</span>
+        </div>
+        <textarea id="feedback-desc" class="input" rows="4" maxlength="500" placeholder="e.g., Python indentation was missing on line 4, or semicolon misread as colon..." style="resize:vertical;min-height:90px;font-family:inherit;font-size:13.5px;line-height:1.5"></textarea>
+      </div>
+
+      <div class="modal-actions" style="margin-top:20px">
+        <button type="submit" class="btn btn-primary" id="feedback-submit-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Submit Report
+        </button>
+        <button type="button" class="btn btn-ghost" id="feedback-cancel-btn">Cancel</button>
+      </div>
+    </form>
   </div>
 </div>
 

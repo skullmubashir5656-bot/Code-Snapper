@@ -153,6 +153,18 @@ const els = {
   errorModalCancel: $('error-modal-cancel'),
   errorRetryBtn:    $('error-retry-btn'),
 
+  // feedback modal
+  feedbackModal:        $('feedback-modal'),
+  feedbackModalClose:   $('feedback-modal-close'),
+  feedbackForm:         $('feedback-form'),
+  feedbackType:         $('feedback-type'),
+  feedbackDesc:         $('feedback-desc'),
+  feedbackCharCount:    $('feedback-char-count'),
+  feedbackSubmitBtn:    $('feedback-submit-btn'),
+  feedbackCancelBtn:    $('feedback-cancel-btn'),
+  reportIssueResultBtn: $('report-issue-result-btn'),
+  footerReportLink:     $('footer-report-link'),
+
   toast:    $('toast'),
   toastMsg: $('toast-msg'),
 
@@ -1928,8 +1940,38 @@ function bindEvents() {
     if (state.croppedDataURL) runExtraction(state.croppedDataURL);
   });
 
+  /* ── Feedback modal ── */
+  if (els.reportIssueResultBtn) {
+    els.reportIssueResultBtn.addEventListener('click', openFeedbackModal);
+  }
+  if (els.footerReportLink) {
+    els.footerReportLink.addEventListener('click', e => {
+      e.preventDefault();
+      openFeedbackModal();
+    });
+  }
+  if (els.feedbackModalClose) {
+    els.feedbackModalClose.addEventListener('click', closeFeedbackModal);
+  }
+  if (els.feedbackCancelBtn) {
+    els.feedbackCancelBtn.addEventListener('click', closeFeedbackModal);
+  }
+  if (els.feedbackForm) {
+    els.feedbackForm.addEventListener('submit', handleFeedbackSubmit);
+  }
+  if (els.feedbackDesc && els.feedbackCharCount) {
+    els.feedbackDesc.addEventListener('input', () => {
+      els.feedbackCharCount.textContent = `${els.feedbackDesc.value.length} / 500`;
+    });
+  }
+
+  // Check URL hash for direct #report-issue link
+  if (window.location.hash === '#report-issue') {
+    setTimeout(openFeedbackModal, 200);
+  }
+
   /* ── Close modals on backdrop click ── */
-  [els.authModal, els.errorModal].forEach(modal => {
+  [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
     if (modal) modal.addEventListener('click', e => {
       if (e.target === modal) closeModal(modal);
     });
@@ -1938,11 +1980,71 @@ function bindEvents() {
   /* ── Close modals on Escape ── */
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      [els.authModal, els.errorModal].forEach(modal => {
+      [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
         if (modal && !modal.classList.contains('hidden')) closeModal(modal);
       });
     }
   });
+}
+
+/* ═══════════════════════════════════════════════
+   FEEDBACK / BUG REPORT
+═══════════════════════════════════════════════ */
+function openFeedbackModal() {
+  if (!els.feedbackModal) return;
+  els.feedbackForm?.reset();
+  if (els.feedbackCharCount) els.feedbackCharCount.textContent = '0 / 500';
+  openModal(els.feedbackModal);
+}
+
+function closeFeedbackModal() {
+  if (!els.feedbackModal) return;
+  closeModal(els.feedbackModal);
+}
+
+async function handleFeedbackSubmit(e) {
+  if (e) e.preventDefault();
+  const type = els.feedbackType ? els.feedbackType.value : 'Other';
+  const desc = els.feedbackDesc ? els.feedbackDesc.value.trim() : '';
+
+  if (els.feedbackSubmitBtn) {
+    els.feedbackSubmitBtn.disabled = true;
+    els.feedbackSubmitBtn.innerHTML = `
+      <div class="spinner" style="width:14px;height:14px;border-width:2px;margin:0 auto"></div>
+      Sending…`;
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.authToken) {
+      headers['Authorization'] = `Bearer ${state.authToken}`;
+    }
+
+    const res = await fetch('/api/feedback', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        type,
+        description: desc,
+        page: window.location.pathname || 'index.html'
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to submit report.');
+
+    closeFeedbackModal();
+    showToast('Report submitted. Thank you for your feedback!', 'success');
+  } catch (err) {
+    showToast(err.message || 'Could not send feedback. Please try again.', 'error');
+  } finally {
+    if (els.feedbackSubmitBtn) {
+      els.feedbackSubmitBtn.disabled = false;
+      els.feedbackSubmitBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        Submit Report`;
+    }
+  }
 }
 
 /* ═══════════════════════════════════════════════
