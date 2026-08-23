@@ -77,7 +77,7 @@
     <a href="index.html" class="mobile-nav-link active">Extract</a>
     <a href="about.html" class="mobile-nav-link">About</a>
     <a href="terms.html" class="mobile-nav-link">Terms</a>
-    <a href="contact.html" class="mobile-nav-link">Contact</a>
+    <a href="#report-issue" class="mobile-nav-link" onclick="document.getElementById('mobile-nav').classList.add('hidden'); openFeedbackModal();">Report an Issue</a>
     <div class="mobile-nav-divider"></div>
     <div class="mobile-nav-auth" id="mobile-nav-auth">
       <!-- filled by JS -->
@@ -449,18 +449,25 @@
 ══════════════════════════════════════ -->
 <footer class="footer" role="contentinfo">
   <div class="footer-inner">
-    <div class="footer-brand">
-      <div class="logo-img" style="width:22px;height:22px">
-        <img src="logo.png" alt="" aria-hidden="true">
-      </div>
-      <span class="footer-brand-name">CodeSnapper</span>
+    <div class="footer-top">
+      <a href="index.html" class="footer-brand" aria-label="CodeSnapper Home">
+        <div class="logo-img" style="width:22px;height:22px">
+          <img src="logo.png" alt="" aria-hidden="true">
+        </div>
+        <span class="footer-brand-name">CodeSnapper</span>
+      </a>
+      <p class="footer-copy">&copy; 2026 CodeSnapper &middot; Images never stored &middot; Built with Gemini Vision &middot; Made by Mubashir Shaikh &amp; Claude</p>
     </div>
-    <p class="footer-copy">&copy; 2026 CodeSnapper &middot; Images never stored &middot; Built with Gemini Vision &middot; Made by Mubashir Shaikh &amp; Claude</p>
+    <div class="footer-divider" aria-hidden="true"></div>
     <nav class="footer-links" aria-label="Footer navigation">
+      <a href="index.html" class="footer-link">Extract</a>
+      <span class="footer-sep" aria-hidden="true">&middot;</span>
       <a href="about.html" class="footer-link">About</a>
+      <span class="footer-sep" aria-hidden="true">&middot;</span>
       <a href="about.html#privacy" class="footer-link">Privacy</a>
+      <span class="footer-sep" aria-hidden="true">&middot;</span>
       <a href="terms.html" class="footer-link">Terms</a>
-      <a href="contact.html" class="footer-link">Contact</a>
+      <span class="footer-sep" aria-hidden="true">&middot;</span>
       <a href="#report-issue" class="footer-link" id="footer-report-link">Report an Issue</a>
     </nav>
   </div>
