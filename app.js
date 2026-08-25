@@ -32,8 +32,11 @@ let updateMobileNavAuth = () => {};
 /* ═══════════════════════════════════════════════
    STATE
 ═══════════════════════════════════════════════ */
+const MAX_BATCH_ANON = 5;
+const MAX_BATCH_AUTH = 10;
+
 const state = {
-  panel:        'hero',        // hero | crop-select | auto-crop | manual-crop | processing | result
+  panel:        'hero',        // hero | batch-preview | crop-select | auto-crop | manual-crop | processing | result
   uploadedFile: null,          // File object
   uploadedImg:  null,          // HTMLImageElement (loaded)
   uploadedDataURL: null,       // original data URL
@@ -44,6 +47,13 @@ const state = {
   ambiguities:   [],
   autoCropper:   null,         // AutoCropper instance
   manualCropper: null,         // ManualCropper instance
+
+  // Batch Mode State
+  isBatch:       false,        // boolean: true when in multi-image batch mode
+  batchItems:    [],           // Array of { id, file, img, dataURL, name, sizeStr, resolution }
+  batchResults:  [],           // Array of { id, name, sizeStr, img, dataURL, croppedDataURL, success, error, code, html, lang, ambiguities, raw }
+  activeBatchIdx: 0,           // Currently viewed tab index in batch result
+
   // Auth
   authToken:     null,         // JWT string or null
   authEmail:     null,         // signed-in email
@@ -57,19 +67,42 @@ const state = {
 const $ = id => document.getElementById(id);
 
 const els = {
-  heroPanel:       $('hero-panel'),
-  appSection:      $('app-section'),
-  cropSelectPanel: $('crop-select-panel'),
-  autoCropPanel:   $('auto-crop-panel'),
-  manualCropPanel: $('manual-crop-panel'),
-  processingPanel: $('processing-panel'),
-  resultPanel:     $('result-panel'),
+  heroPanel:         $('hero-panel'),
+  appSection:        $('app-section'),
+  batchPreviewPanel: $('batch-preview-panel'),
+  cropSelectPanel:   $('crop-select-panel'),
+  autoCropPanel:     $('auto-crop-panel'),
+  manualCropPanel:   $('manual-crop-panel'),
+  processingPanel:   $('processing-panel'),
+  resultPanel:       $('result-panel'),
 
   uploadArea:      $('upload-area'),
   fileInput:       $('file-input'),
   usageCount:      $('usage-count'),
   usageFill:       $('usage-fill'),
   usageProgress:   $('usage-progress'),
+
+  // Batch Preview Elements
+  batchCountTitle:      $('batch-count-title'),
+  batchLimitWarning:    $('batch-limit-warning'),
+  batchLimitWarningMsg: $('batch-limit-warning-msg'),
+  batchGrid:            $('batch-grid'),
+  batchCancelBtn:       $('batch-cancel-btn'),
+  batchAddBtn:          $('batch-add-btn'),
+  batchExtractBtn:      $('batch-extract-btn'),
+  batchExtractBtnLbl:   $('batch-extract-btn-lbl'),
+  batchFooterHint:      $('batch-footer-hint'),
+
+  // Batch Processing & Result Elements
+  batchProgressWrap:    $('batch-progress-wrap'),
+  batchProgressLabel:   $('batch-progress-label'),
+  batchProgressPct:     $('batch-progress-pct'),
+  batchProgressFill:    $('batch-progress-fill'),
+  batchTabsBar:         $('batch-tabs-bar'),
+  batchTabsList:        $('batch-tabs-list'),
+  batchCopyAllBtn:      $('batch-copy-all-btn'),
+  batchItemError:       $('batch-item-error'),
+  batchItemErrorMsg:    $('batch-item-error-msg'),
 
   cropPreviewImg:  $('crop-preview-img'),
   changeImgBtn:    $('change-img-btn'),
@@ -86,6 +119,7 @@ const els = {
   manualResetBtn:  $('manual-reset-btn'),
   manualHintLbl:   $('manual-hint-lbl'),
 
+  processingTitle: $('processing-title'),
   step1: $('step-1'), step2: $('step-2'),
   step3: $('step-3'), step4: $('step-4'),
   procStatusText: $('proc-status-text'),
@@ -181,12 +215,13 @@ function showPanel(name) {
   document.body.style.touchAction = '';
 
   const allPanels = [
-    { id: 'hero',         el: els.heroPanel },
-    { id: 'crop-select',  el: els.cropSelectPanel },
-    { id: 'auto-crop',    el: els.autoCropPanel },
-    { id: 'manual-crop',  el: els.manualCropPanel },
-    { id: 'processing',   el: els.processingPanel },
-    { id: 'result',       el: els.resultPanel },
+    { id: 'hero',          el: els.heroPanel },
+    { id: 'batch-preview', el: els.batchPreviewPanel },
+    { id: 'crop-select',   el: els.cropSelectPanel },
+    { id: 'auto-crop',     el: els.autoCropPanel },
+    { id: 'manual-crop',   el: els.manualCropPanel },
+    { id: 'processing',    el: els.processingPanel },
+    { id: 'result',        el: els.resultPanel },
   ];
 
   // 1. Explicitly hide ALL panels first
@@ -609,9 +644,34 @@ function loadImage(file) {
 }
 
 /* ═══════════════════════════════════════════════
-   FILE HANDLING
+   FILE HANDLING (Single & Batch)
 ═══════════════════════════════════════════════ */
-async function handleFile(file) {
+async function handleFiles(fileList) {
+  if (!fileList || fileList.length === 0) return;
+  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  if (files.length === 0) {
+    showError('Please upload valid image files (PNG, JPG, WEBP, GIF).', 'Invalid File Type');
+    return;
+  }
+
+  // Single file and not currently adding to a batch preview
+  if (files.length === 1 && (!state.isBatch || state.panel === 'hero')) {
+    state.isBatch = false;
+    state.batchItems = [];
+    state.batchResults = [];
+    handleSingleFile(files[0]);
+    return;
+  }
+
+  // Batch Mode (2 or more files, or adding to an existing batch)
+  state.isBatch = true;
+  await handleBatchFiles(files);
+}
+
+// Single-file backward compatibility
+const handleFile = handleFiles;
+
+async function handleSingleFile(file) {
   if (!file) return;
   try {
     const { img, dataURL } = await loadImage(file);
@@ -619,13 +679,130 @@ async function handleFile(file) {
     state.uploadedImg     = img;
     state.uploadedDataURL = dataURL;
 
-    // Show crop selection
+    // Show single crop selection
     els.cropPreviewImg.src = dataURL;
     els.originalImgDisp.src = dataURL;
     showPanel('crop-select');
   } catch (err) {
     showError(err.message);
   }
+}
+
+async function handleBatchFiles(files) {
+  const maxAllowed = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  let targetFiles = files;
+
+  // Check file count against max limit
+  const currentCount = state.batchItems.length;
+  const availableSlots = maxAllowed - currentCount;
+
+  if (availableSlots <= 0) {
+    showToast(
+      state.authToken
+        ? `Maximum ${MAX_BATCH_AUTH} images allowed in a batch.`
+        : `Anonymous users can batch upload up to ${MAX_BATCH_ANON} images. Sign in for up to ${MAX_BATCH_AUTH}.`,
+      'error'
+    );
+    return;
+  }
+
+  if (targetFiles.length > availableSlots) {
+    showToast(
+      state.authToken
+        ? `Added first ${availableSlots} images (maximum ${MAX_BATCH_AUTH} per batch).`
+        : `Added first ${availableSlots} images (maximum ${MAX_BATCH_ANON} for anonymous users).`,
+      'error'
+    );
+    targetFiles = targetFiles.slice(0, availableSlots);
+  }
+
+  // Load each file into batch item object
+  for (const file of targetFiles) {
+    if (file.size > MAX_FILE_SIZE) {
+      showToast(`Skipped "${file.name}" — file is over 10 MB limit.`, 'error');
+      continue;
+    }
+    try {
+      const { img, dataURL } = await loadImage(file);
+      const sizeStr = (file.size / (1024 * 1024)).toFixed(1) + ' MB';
+      const resolution = `${img.naturalWidth} × ${img.naturalHeight}`;
+      state.batchItems.push({
+        id: 'batch_' + Math.random().toString(36).slice(2, 9),
+        file,
+        img,
+        dataURL,
+        name: file.name,
+        sizeStr,
+        resolution
+      });
+    } catch (err) {
+      showToast(`Failed to load "${file.name}": ${err.message}`, 'error');
+    }
+  }
+
+  if (state.batchItems.length === 0) {
+    resetToHero();
+    return;
+  }
+
+  renderBatchPreview();
+  showPanel('batch-preview');
+}
+
+function removeBatchItem(id) {
+  state.batchItems = state.batchItems.filter(item => item.id !== id);
+  if (state.batchItems.length === 0) {
+    resetToHero();
+    return;
+  }
+  renderBatchPreview();
+}
+window.removeBatchItem = removeBatchItem;
+
+function renderBatchPreview() {
+  const count = state.batchItems.length;
+  els.batchCountTitle.textContent = count;
+  els.batchExtractBtnLbl.textContent = `Extract All (${count} Image${count > 1 ? 's' : ''})`;
+
+  // Calculate upfront remaining quota
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - getCount());
+
+  if (remaining < count) {
+    els.batchLimitWarning.classList.remove('hidden');
+    if (remaining <= 0) {
+      els.batchLimitWarningMsg.innerHTML = state.authToken
+        ? '<strong>Quota Reached:</strong> You have 0 extractions remaining. Limit resets in 24 hours.'
+        : '<strong>Free Limit Reached:</strong> Sign in to get 50 extractions per day.';
+      els.batchExtractBtn.disabled = true;
+    } else {
+      els.batchLimitWarningMsg.innerHTML = `
+        <strong>Extraction Limit:</strong> You have <strong>${remaining} extraction${remaining > 1 ? 's' : ''} remaining</strong>. Only the first ${remaining} of ${count} images will be processed.
+      `;
+      els.batchExtractBtn.disabled = false;
+    }
+  } else {
+    els.batchLimitWarning.classList.add('hidden');
+    els.batchExtractBtn.disabled = false;
+  }
+
+  // Render thumbnail grid
+  els.batchGrid.innerHTML = state.batchItems.map((item, idx) => `
+    <div class="batch-card" data-id="${item.id}">
+      <div class="batch-thumb-wrap">
+        <img class="batch-thumb" src="${item.dataURL}" alt="${escapeHtml(item.name)}">
+        <span class="batch-card-badge">#${idx + 1}</span>
+        <button class="batch-card-remove" title="Remove screenshot" aria-label="Remove screenshot ${idx + 1}" onclick="removeBatchItem('${item.id}')">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="batch-card-info">
+        <div class="batch-card-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</div>
+        <div class="batch-card-meta">${item.sizeStr} · ${item.resolution}</div>
+      </div>
+    </div>
+  `).join('');
 }
 
 /* ═══════════════════════════════════════════════
@@ -1576,6 +1753,256 @@ function displayResult(code, highlightedHtml, lang, ambiguities) {
 }
 
 /* ═══════════════════════════════════════════════
+   BATCH EXTRACTION PIPELINE (Sequential)
+═══════════════════════════════════════════════ */
+async function runBatchExtraction() {
+  const count = state.batchItems.length;
+  if (count === 0) return;
+
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - getCount());
+
+  if (remaining <= 0) {
+    if (state.authToken) {
+      showError('You have reached your daily quota of 50 extractions. Please wait until your quota resets in 24 hours.', 'Daily Quota Reached');
+    } else {
+      openAuthModal({ fromLimit: true });
+    }
+    return;
+  }
+
+  const itemsToProcess = state.batchItems.slice(0, remaining);
+  const total = itemsToProcess.length;
+
+  state.batchResults = [];
+  showPanel('processing');
+  els.batchProgressWrap.classList.remove('hidden');
+  els.processingTitle.textContent = 'Extracting your code batch…';
+
+  for (let i = 0; i < total; i++) {
+    const item = itemsToProcess[i];
+    const num = i + 1;
+    const progressPct = Math.round(((i) / total) * 100);
+
+    els.batchProgressLabel.textContent = `Processing image ${num} of ${total} (${item.name})…`;
+    els.batchProgressPct.textContent = `${progressPct}%`;
+    els.batchProgressFill.style.width = `${progressPct}%`;
+
+    resetSteps();
+    setStep(1);
+    els.procStatusText.textContent = `Image ${num}/${total}: AI Auto-Cropping code area…`;
+    await delay(60);
+
+    try {
+      // 1. Instant AI Auto Crop
+      const croppedDataURL = autoCropImage(item.img) || item.dataURL;
+      setStep(1, true); setStep(2);
+      els.procStatusText.textContent = `Image ${num}/${total}: Transcribing with Gemini Vision AI…`;
+
+      // 2. Call Gemini API
+      const raw = await callGemini(croppedDataURL);
+      setStep(2, true); setStep(3);
+      els.procStatusText.textContent = `Image ${num}/${total}: Detecting syntax & highlighting…`;
+
+      // 3. Parse Response
+      const parsed = parseResponse(raw);
+      if (parsed.noCode) {
+        state.batchResults.push({
+          id: item.id,
+          name: item.name,
+          sizeStr: item.sizeStr,
+          img: item.img,
+          dataURL: item.dataURL,
+          croppedDataURL,
+          success: false,
+          error: 'No source code was detected in this screenshot.',
+          code: '',
+          html: '',
+          lang: 'plaintext',
+          ambiguities: []
+        });
+      } else {
+        const { html, lang } = detectAndHighlight(parsed.code);
+        state.batchResults.push({
+          id: item.id,
+          name: item.name,
+          sizeStr: item.sizeStr,
+          img: item.img,
+          dataURL: item.dataURL,
+          croppedDataURL,
+          success: true,
+          code: parsed.code,
+          html,
+          lang,
+          ambiguities: parsed.ambiguities,
+          raw
+        });
+
+        // Save to history if signed in
+        if (state.authToken && parsed.code) {
+          fetch('/api/history/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
+            body: JSON.stringify({ codeText: parsed.code, lang })
+          }).then(r => r.json()).then(d => {
+            if (d.history) renderHistory(d.history);
+          }).catch(() => {});
+        }
+      }
+
+      // Count extraction
+      if (!state.authToken) {
+        incCount();
+        updateUsageUI();
+      }
+    } catch (err) {
+      // Record failure for this specific item and continue batch
+      state.batchResults.push({
+        id: item.id,
+        name: item.name,
+        sizeStr: item.sizeStr,
+        img: item.img,
+        dataURL: item.dataURL,
+        croppedDataURL: item.dataURL,
+        success: false,
+        error: err.message || 'Extraction failed for this image.',
+        code: '',
+        html: '',
+        lang: 'plaintext',
+        ambiguities: []
+      });
+
+      if (err.message.startsWith('DAILY_LIMIT:') || err.message === 'ANON_LIMIT_REACHED') {
+        break;
+      }
+    }
+  }
+
+  els.batchProgressPct.textContent = '100%';
+  els.batchProgressFill.style.width = '100%';
+  await delay(200);
+
+  showBatchResults();
+}
+
+/* ═══════════════════════════════════════════════
+   BATCH RESULTS DISPLAY & ACTIONS
+═══════════════════════════════════════════════ */
+function showBatchResults() {
+  if (state.batchResults.length === 0) {
+    resetToHero();
+    return;
+  }
+
+  els.batchTabsBar.classList.remove('hidden');
+
+  // Build Tab Strip
+  els.batchTabsList.innerHTML = state.batchResults.map((res, idx) => `
+    <button class="batch-tab ${idx === 0 ? 'active' : ''}" data-idx="${idx}" aria-label="View results for Image ${idx + 1}">
+      <span>Image ${idx + 1}</span>
+      <span class="batch-tab-badge ${res.success ? 'ok' : 'err'}">${res.success ? '✓ ' + res.lang : '✕ Failed'}</span>
+    </button>
+  `).join('');
+
+  // Wire Tab Clicks
+  els.batchTabsList.querySelectorAll('.batch-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-idx'), 10);
+      switchBatchTab(idx);
+    });
+  });
+
+  // Switch to first tab
+  switchBatchTab(0);
+  showPanel('result');
+}
+
+function switchBatchTab(idx) {
+  state.activeBatchIdx = idx;
+
+  // Update tab styles
+  const allTabs = els.batchTabsList.querySelectorAll('.batch-tab');
+  allTabs.forEach((tab, i) => {
+    if (i === idx) tab.classList.add('active');
+    else tab.classList.remove('active');
+  });
+
+  const cur = state.batchResults[idx];
+  if (!cur) return;
+
+  // Update original preview image source
+  els.originalImgDisp.src = cur.dataURL;
+
+  const codeWin = document.getElementById('code-window');
+
+  if (cur.success) {
+    els.batchItemError.classList.add('hidden');
+    if (codeWin) codeWin.classList.remove('hidden');
+    els.copyBtn.classList.remove('hidden');
+    els.viewOriginalBtn.classList.remove('hidden');
+
+    state.extractedCode = cur.code;
+    state.detectedLang  = cur.lang;
+    state.ambiguities   = cur.ambiguities;
+    state.rawResponse   = cur.raw;
+
+    displayResult(cur.code, cur.html, cur.lang, cur.ambiguities);
+  } else {
+    els.batchItemError.classList.remove('hidden');
+    els.batchItemErrorMsg.textContent = cur.error || 'Failed to extract code from this image.';
+    if (codeWin) codeWin.classList.add('hidden');
+    els.copyBtn.classList.add('hidden');
+    els.ambigSection.classList.add('hidden');
+
+    state.extractedCode = '';
+    state.detectedLang  = 'plaintext';
+    state.ambiguities   = [];
+
+    els.langName.textContent = 'failed';
+    els.codeFilename.textContent = cur.name || 'image_error';
+  }
+}
+
+async function copyAllBatchCode() {
+  const successful = state.batchResults.filter(r => r.success && r.code);
+  if (successful.length === 0) {
+    showToast('No successfully extracted code to copy.', 'error');
+    return;
+  }
+
+  const combined = successful
+    .map((r, i) => `# ---- Image ${i + 1}: ${r.name} (${r.lang}) ---- #\n\n${r.code}`)
+    .join('\n\n\n');
+
+  try {
+    await navigator.clipboard.writeText(combined);
+    els.batchCopyAllBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+      All Copied!
+    `;
+    els.batchCopyAllBtn.style.background = 'linear-gradient(135deg,#059669,#10b981)';
+    showToast(`Copied ${successful.length} code blocks to clipboard!`);
+    setTimeout(() => {
+      els.batchCopyAllBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy All
+      `;
+      els.batchCopyAllBtn.style.background = '';
+    }, 2200);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = combined;
+    ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast(`Copied ${successful.length} code blocks!`);
+  }
+}
+
+/* ═══════════════════════════════════════════════
    COPY TO CLIPBOARD
 ═══════════════════════════════════════════════ */
 async function copyCode() {
@@ -1618,11 +2045,22 @@ function resetToHero() {
   state.uploadedDataURL = null;
   state.croppedDataURL  = null;
   state.extractedCode   = '';
+  state.isBatch         = false;
+  state.batchItems      = [];
+  state.batchResults    = [];
+  state.activeBatchIdx  = 0;
 
   if (state.autoCropper)  { state.autoCropper.destroy();  state.autoCropper = null; }
   if (state.manualCropper) { state.manualCropper = null; }
 
   els.fileInput.value = '';
+  els.batchProgressWrap?.classList.add('hidden');
+  els.batchTabsBar?.classList.add('hidden');
+  els.batchItemError?.classList.add('hidden');
+  document.getElementById('code-window')?.classList.remove('hidden');
+  els.copyBtn?.classList.remove('hidden');
+  els.processingTitle.textContent = 'Extracting your code…';
+
   els.originalCompare.classList.add('hidden');
   els.viewOriginalBtn.textContent = '';
   els.viewOriginalBtn.innerHTML = `
@@ -1696,8 +2134,9 @@ function bindEvents() {
   });
 
   els.fileInput.addEventListener('change', e => {
-    const f = e.target.files[0];
-    if (f) handleFile(f);
+    if (e.target.files && e.target.files.length > 0) {
+      handleFiles(e.target.files);
+    }
   });
 
   // Ctrl+O shortcut
@@ -1715,36 +2154,58 @@ function bindEvents() {
   els.uploadArea.addEventListener('drop', e => {
     e.preventDefault();
     els.uploadArea.classList.remove('drag-over');
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
   });
 
   // Also allow dropping anywhere
   document.addEventListener('dragover', e => e.preventDefault());
   document.addEventListener('drop', e => {
     e.preventDefault();
-    const f = e.dataTransfer.files[0];
-    if (f && state.panel === 'hero') handleFile(f);
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (state.panel === 'hero' || state.panel === 'batch-preview') {
+        handleFiles(e.dataTransfer.files);
+      }
+    }
   });
 
   /* ── Clipboard paste ── */
   document.addEventListener('paste', e => {
     const items = e.clipboardData?.items;
     if (!items) return;
+    const pastedFiles = [];
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile();
-        if (file) {
-          if (state.panel === 'hero') handleFile(file);
-          else if (state.panel === 'crop-select' || state.panel === 'auto-crop' || state.panel === 'manual-crop') {
-            // Allow repasting to change image
-            handleFile(file);
-          }
-          break;
-        }
+        if (file) pastedFiles.push(file);
+      }
+    }
+    if (pastedFiles.length > 0) {
+      if (state.panel === 'hero' || state.panel === 'batch-preview') {
+        handleFiles(pastedFiles);
+      } else if (state.panel === 'crop-select' || state.panel === 'auto-crop' || state.panel === 'manual-crop') {
+        // Allow repasting to change image
+        handleFiles(pastedFiles);
       }
     }
   });
+
+  /* ── Batch Preview Actions ── */
+  if (els.batchCancelBtn) {
+    els.batchCancelBtn.addEventListener('click', resetToHero);
+  }
+  if (els.batchAddBtn) {
+    els.batchAddBtn.addEventListener('click', () => {
+      els.fileInput.click();
+    });
+  }
+  if (els.batchExtractBtn) {
+    els.batchExtractBtn.addEventListener('click', runBatchExtraction);
+  }
+  if (els.batchCopyAllBtn) {
+    els.batchCopyAllBtn.addEventListener('click', copyAllBatchCode);
+  }
 
   /* ── Crop selection ── */
   els.autoCropBtn.addEventListener('click', enterAutoCrop);
@@ -1795,7 +2256,11 @@ function bindEvents() {
   });
 
   els.tryAgainBtn.addEventListener('click', () => {
-    showPanel('crop-select');
+    if (state.isBatch) {
+      showPanel('batch-preview');
+    } else {
+      showPanel('crop-select');
+    }
   });
 
   els.extractAnotherBtn.addEventListener('click', resetToHero);
