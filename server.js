@@ -52,9 +52,9 @@ const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/mod
 const GEMINI_OPENAI_URL  = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-flash-latest',
 ];

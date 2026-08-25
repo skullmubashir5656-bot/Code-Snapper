@@ -101,9 +101,19 @@ body {
   line-height: 1.6;
   min-height: 100vh;
   min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   touch-action: manipulation;
+}
+
+main, #main-content {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  position: relative;
 }
 
 /* Ambient glow background */
@@ -448,12 +458,25 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
    APP SECTION (workflow states)
    ============================================================ */
 #app-section {
-  padding: 24px 24px 80px;
-  max-width: 860px; margin: 0 auto;
-  position: relative; z-index: 1;
+  padding: 84px 24px 80px;
+  max-width: 860px;
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
-.state-panel { animation: slideUp .35s ease both; }
+.state-panel {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp .35s ease both;
+  box-sizing: border-box;
+}
 
 /* ============================================================
    SECTION HEADER
@@ -838,7 +861,11 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 #processing-panel:not(.hidden) {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  min-height: 420px; gap: 32px; text-align: center;
+  min-height: calc(100vh - 240px);
+  min-height: calc(100dvh - 240px);
+  padding: 36px 16px 48px;
+  gap: 30px; text-align: center;
+  width: 100%; box-sizing: border-box;
 }
 
 .processing-orb {
@@ -899,13 +926,20 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 /* ============================================================
    RESULT PANEL
    ============================================================ */
-#result-panel:not(.hidden) { display: flex; flex-direction: column; gap: 20px; }
+#result-panel:not(.hidden) {
+  display: flex; flex-direction: column; gap: 20px;
+  width: 100%;
+  min-height: calc(100vh - 220px);
+  min-height: calc(100dvh - 220px);
+  overflow-y: visible;
+  box-sizing: border-box;
+}
 
 /* Sticky topbar: stays visible while scrolling through long code */
 .result-topbar {
   display: flex; align-items: center;
   justify-content: space-between; flex-wrap: wrap; gap: 12px;
-  position: sticky; top: 60px; z-index: 20;
+  position: sticky; top: 72px; z-index: 20;
   background: var(--bg-2);
   border: 1px solid var(--border-2);
   border-radius: var(--r-xl);
@@ -1036,7 +1070,16 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .tip-callout-text { font-size: 13px; color: var(--txt-2); line-height: 1.55; font-weight: 500; }
 .tip-callout-text strong { color: var(--txt); font-weight: 700; }
 
-.result-cta { display: flex; justify-content: center; padding-top: 8px; }
+.result-cta {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 20px 0 44px;
+  margin-bottom: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
 
 /* ============================================================
    MOBILE NAV DRAWER
@@ -1343,11 +1386,13 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
    FOOTER
    ============================================================ */
 .footer {
+  margin-top: auto !important;
   border-top: 1px solid var(--border);
   background: var(--g-footer);
   padding: 32px 24px 28px;
   position: relative; z-index: 1;
   width: 100%; box-sizing: border-box;
+  flex-shrink: 0;
 }
 .footer-inner {
   max-width: 1100px; margin: 0 auto;
@@ -1414,10 +1459,15 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     overflow-x: hidden !important;
   }
 
-  .container, #app-section, .about-wrap, .history-section {
+  .container, .about-wrap, .history-section {
     max-width: 100% !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
+    box-sizing: border-box !important;
+  }
+  #app-section {
+    max-width: 100% !important;
+    padding: 80px 16px 80px !important;
     box-sizing: border-box !important;
   }
 
@@ -1637,18 +1687,19 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     box-sizing: border-box;
   }
 
-  /* Processing Panel — Vertically centered in viewport with no dead space */
+  /* Processing Panel — Vertically centered with generous top clearance */
   #processing-panel:not(.hidden) {
-    min-height: calc(100vh - 120px);
-    min-height: calc(100dvh - 120px);
+    min-height: calc(100vh - 220px);
+    min-height: calc(100dvh - 220px);
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
     text-align: center;
-    gap: 28px;
-    padding: 20px 0;
+    gap: 24px;
+    padding: 24px 0 48px;
     margin: 0;
+    width: 100%;
     box-sizing: border-box;
   }
   .processing-title {
@@ -1662,13 +1713,16 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   #result-panel:not(.hidden) {
     gap: 16px;
     width: 100%;
+    min-height: calc(100vh - 200px);
+    min-height: calc(100dvh - 200px);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
+    overflow-y: visible;
   }
   .result-topbar {
     position: sticky;
-    top: 60px;
+    top: 68px;
     z-index: 20;
     flex-direction: column;
     align-items: stretch;
@@ -1699,6 +1753,21 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     font-size: 14.5px;
     justify-content: center;
     box-sizing: border-box;
+  }
+  .result-cta {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    gap: 12px;
+    padding: 16px 0 44px;
+    margin-bottom: 24px;
+    box-sizing: border-box;
+  }
+  .result-cta .btn {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+    font-size: 15px;
   }
   #copy-btn {
     width: 100%;

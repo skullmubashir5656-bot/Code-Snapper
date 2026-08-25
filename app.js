@@ -1605,7 +1605,6 @@ async function runExtraction(croppedDataURL) {
     // Step 1: Encoding
     setStep(1);
     els.procStatusText.textContent = 'Preparing & encoding image…';
-    await delay(120);
     setStep(1, true); setStep(2);
 
     // Step 2: server-side Gemini call with active status updates
@@ -1621,7 +1620,7 @@ async function runExtraction(croppedDataURL) {
       if (updateIdx < statusUpdates.length) {
         els.procStatusText.textContent = statusUpdates[updateIdx++];
       }
-    }, 1800);
+    }, 1200);
 
     let raw;
     try {
@@ -1655,16 +1654,13 @@ async function runExtraction(croppedDataURL) {
     }
 
     setStep(2, true); setStep(3);
-    await delay(100);
 
     // Step 3: Parse
     els.procStatusText.textContent = 'Parsing code structure & ambiguities…';
     const parsed = parseResponse(raw);
-    await delay(100);
 
     if (parsed.noCode) {
       setStep(3, true); setStep(4);
-      await delay(100);
       showPanel('crop-select');
       showError('No source code detected in this image. Please upload an image containing source code.', 'No Code Detected');
       return;
@@ -1675,9 +1671,7 @@ async function runExtraction(croppedDataURL) {
 
     // Step 4: Highlight
     const { html, lang } = detectAndHighlight(parsed.code);
-    await delay(100);
     setStep(4, true);
-    await delay(150);
 
     // Increment anon counter (signed-in users tracked server-side)
     if (!state.authToken) { incCount(); updateUsageUI(); }
@@ -1792,7 +1786,6 @@ async function runBatchExtraction() {
     resetSteps();
     setStep(1);
     els.procStatusText.textContent = `Image ${num}/${total}: AI Auto-Cropping code area…`;
-    await delay(60);
 
     try {
       // 1. Instant AI Auto Crop
