@@ -109,6 +109,7 @@
     <div class="upload-area" id="upload-area" role="button" tabindex="0"
          aria-label="Upload image: click, drag-and-drop, or paste from clipboard">
       <input type="file" id="file-input" accept="image/*" multiple class="sr-only" aria-label="Choose image file">
+      <input type="file" id="camera-file-input" accept="image/*" capture="environment" class="sr-only" aria-label="Take photo with camera">
 
       <div class="upload-icon-wrap" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -122,12 +123,16 @@
       <p class="upload-desc">Drag &amp; drop 1 or multiple images, click to browse, or paste</p>
 
       <div class="upload-divider" aria-hidden="true">
-        <span>or use shortcuts</span>
+        <span>or choose an option</span>
       </div>
 
-      <div class="upload-shortcuts" aria-label="Keyboard shortcuts">
+      <div class="upload-shortcuts" aria-label="Upload options and shortcuts">
         <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>V</kbd> Paste image</span>
-        <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>O</kbd> Open file</span>
+        <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>O</kbd> Browse</span>
+        <button type="button" class="upload-camera-btn" id="open-camera-btn" aria-label="Use device camera to capture code">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <span>Use Camera</span>
+        </button>
       </div>
     </div>
 
@@ -686,6 +691,97 @@
         <button type="button" class="btn btn-ghost" id="feedback-cancel-btn">Cancel</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Camera / Lens Viewfinder Modal -->
+<div id="camera-modal" class="modal-backdrop hidden" hidden role="dialog" aria-modal="true" aria-labelledby="camera-modal-title">
+  <div class="camera-modal-content">
+    
+    <!-- Camera Header -->
+    <div class="camera-modal-header">
+      <div class="camera-title-wrap">
+        <div class="camera-live-dot" id="camera-live-dot"></div>
+        <h3 class="camera-modal-title" id="camera-modal-title">Camera Lens</h3>
+        <span class="camera-badge">Live Viewfinder</span>
+      </div>
+      <div class="camera-header-actions">
+        <button type="button" class="btn btn-ghost btn-icon" id="camera-switch-btn" aria-label="Switch camera" title="Switch between front and rear cameras" style="display:none">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+        </button>
+        <button type="button" class="btn btn-ghost btn-icon modal-close-btn" id="camera-modal-close" aria-label="Close camera">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Stream Viewport & Framing Guide -->
+    <div class="camera-viewport-wrap" id="camera-viewport-wrap">
+      <video id="camera-video" playsinline autoplay muted></video>
+      <canvas id="camera-canvas" class="hidden"></canvas>
+      <img id="camera-preview-img" class="hidden" alt="Captured code photo preview">
+
+      <!-- Framing Guide Overlay (active during live camera) -->
+      <div class="camera-framing-guide" id="camera-framing-guide">
+        <div class="camera-corner top-left"></div>
+        <div class="camera-corner top-right"></div>
+        <div class="camera-corner bottom-left"></div>
+        <div class="camera-corner bottom-right"></div>
+        <div class="camera-scan-line"></div>
+        <div class="camera-guide-pill">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          <span>Align code inside frame</span>
+        </div>
+      </div>
+
+      <!-- Permission Denied / Error View -->
+      <div id="camera-error-view" class="camera-error-view hidden">
+        <div class="camera-error-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+        </div>
+        <h4 class="camera-error-title">Camera Access Denied</h4>
+        <p class="camera-error-msg" id="camera-error-msg">Camera access denied — please allow camera permission in your browser settings, or choose an image file.</p>
+        <div class="camera-error-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="camera-retry-btn">Try Again</button>
+          <button type="button" class="btn btn-primary btn-sm" id="camera-fallback-file-btn">Choose Image File</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tips Row -->
+    <div class="camera-tips-row" id="camera-tips-row">
+      <span class="camera-tip-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+        Hold steady for best results
+      </span>
+      <span class="camera-tip-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        Ensure good lighting — avoid glare on screens
+      </span>
+    </div>
+
+    <!-- Controls Bar -->
+    <div class="camera-controls-bar">
+      <!-- Live Shutter Mode -->
+      <div class="camera-shutter-wrap" id="camera-live-controls">
+        <button type="button" class="camera-shutter-btn" id="camera-capture-btn" aria-label="Take Photo">
+          <div class="camera-shutter-inner"></div>
+        </button>
+      </div>
+
+      <!-- Post-Capture Review Mode -->
+      <div class="camera-review-controls hidden" id="camera-review-controls">
+        <button type="button" class="btn btn-secondary btn-lg" id="camera-retake-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+          Retake
+        </button>
+        <button type="button" class="btn btn-primary btn-lg" id="camera-confirm-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Use Photo
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 

@@ -195,6 +195,28 @@ const els = {
   reportIssueResultBtn: $('report-issue-result-btn'),
   footerReportLink:     $('footer-report-link'),
 
+  // camera lens modal & tools
+  openCameraBtn:        $('open-camera-btn'),
+  cameraFileInput:      $('camera-file-input'),
+  cameraModal:          $('camera-modal'),
+  cameraModalClose:     $('camera-modal-close'),
+  cameraSwitchBtn:      $('camera-switch-btn'),
+  cameraVideo:          $('camera-video'),
+  cameraCanvas:         $('camera-canvas'),
+  cameraPreviewImg:     $('camera-preview-img'),
+  cameraFramingGuide:   $('camera-framing-guide'),
+  cameraErrorView:      $('camera-error-view'),
+  cameraErrorMsg:       $('camera-error-msg'),
+  cameraRetryBtn:       $('camera-retry-btn'),
+  cameraFallbackFileBtn:$('camera-fallback-file-btn'),
+  cameraLiveControls:   $('camera-live-controls'),
+  cameraCaptureBtn:     $('camera-capture-btn'),
+  cameraReviewControls: $('camera-review-controls'),
+  cameraRetakeBtn:      $('camera-retake-btn'),
+  cameraConfirmBtn:     $('camera-confirm-btn'),
+  cameraTipsRow:        $('camera-tips-row'),
+  cameraLiveDot:        $('camera-live-dot'),
+
   toast:    $('toast'),
   toastMsg: $('toast-msg'),
 
@@ -2028,6 +2050,224 @@ async function copyCode() {
 }
 
 /* ═══════════════════════════════════════════════
+   CAMERA / LENS VIEWFINDER
+═══════════════════════════════════════════════ */
+let cameraStream = null;
+let cameraFacingMode = 'environment';
+let capturedBlob = null;
+let hasMultipleVideoDevices = false;
+
+async function checkVideoDevices() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoInputs = devices.filter(d => d.kind === 'videoinput');
+    hasMultipleVideoDevices = videoInputs.length > 1;
+    if (els.cameraSwitchBtn) {
+      els.cameraSwitchBtn.style.display = hasMultipleVideoDevices ? 'flex' : 'none';
+    }
+  } catch {
+    hasMultipleVideoDevices = false;
+  }
+}
+
+async function startCamera(facing = 'environment') {
+  cameraFacingMode = facing;
+  stopCameraStream();
+
+  // Reset UI states
+  if (els.cameraVideo) {
+    els.cameraVideo.classList.remove('hidden');
+    els.cameraVideo.style.display = 'block';
+  }
+  if (els.cameraCanvas) {
+    els.cameraCanvas.classList.add('hidden');
+  }
+  if (els.cameraPreviewImg) {
+    els.cameraPreviewImg.classList.add('hidden');
+    els.cameraPreviewImg.src = '';
+  }
+  if (els.cameraFramingGuide) {
+    els.cameraFramingGuide.classList.remove('hidden');
+    els.cameraFramingGuide.style.display = 'flex';
+  }
+  if (els.cameraErrorView) {
+    els.cameraErrorView.classList.add('hidden');
+  }
+  if (els.cameraLiveControls) {
+    els.cameraLiveControls.classList.remove('hidden');
+    els.cameraLiveControls.style.display = 'flex';
+  }
+  if (els.cameraReviewControls) {
+    els.cameraReviewControls.classList.add('hidden');
+    els.cameraReviewControls.style.display = 'none';
+  }
+  if (els.cameraTipsRow) {
+    els.cameraTipsRow.classList.remove('hidden');
+  }
+  if (els.cameraLiveDot) {
+    els.cameraLiveDot.style.display = 'block';
+  }
+
+  openModal(els.cameraModal);
+
+  // Check getUserMedia support
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    console.warn('[Camera] getUserMedia not supported on this browser/context — triggering native capture fallback');
+    if (els.cameraFileInput) {
+      closeCameraModal();
+      els.cameraFileInput.click();
+      return;
+    }
+    showCameraError('Camera API is not supported in this browser. Please upload or browse an image file.');
+    return;
+  }
+
+  try {
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: cameraFacingMode },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
+    } catch (e1) {
+      console.warn('[Camera] Ideal constraints failed, trying basic video constraint:', e1);
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+    }
+
+    cameraStream = stream;
+    if (els.cameraVideo) {
+      els.cameraVideo.srcObject = stream;
+      await els.cameraVideo.play().catch(() => {});
+    }
+
+    await checkVideoDevices();
+  } catch (err) {
+    console.error('[Camera] Access error:', err);
+    const isDenied = err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError';
+    const msg = isDenied
+      ? 'Camera access denied — please allow camera permission in your browser settings, or choose an image file.'
+      : (err.message || 'Could not start camera stream. Please try again or upload an image file.');
+    showCameraError(msg);
+  }
+}
+
+function showCameraError(msg) {
+  if (els.cameraErrorMsg) els.cameraErrorMsg.textContent = msg;
+  if (els.cameraErrorView) els.cameraErrorView.classList.remove('hidden');
+  if (els.cameraFramingGuide) els.cameraFramingGuide.style.display = 'none';
+  if (els.cameraLiveControls) els.cameraLiveControls.style.display = 'none';
+  if (els.cameraReviewControls) els.cameraReviewControls.style.display = 'none';
+  if (els.cameraLiveDot) els.cameraLiveDot.style.display = 'none';
+}
+
+function stopCameraStream() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => {
+      try { track.stop(); } catch (_) {}
+    });
+    cameraStream = null;
+  }
+  if (els.cameraVideo) {
+    els.cameraVideo.srcObject = null;
+  }
+}
+
+function closeCameraModal() {
+  stopCameraStream();
+  capturedBlob = null;
+  closeModal(els.cameraModal);
+}
+
+function switchCamera() {
+  cameraFacingMode = (cameraFacingMode === 'environment') ? 'user' : 'environment';
+  startCamera(cameraFacingMode);
+}
+
+function capturePhoto() {
+  if (!els.cameraVideo || !els.cameraVideo.videoWidth) {
+    showToast('Waiting for camera stream…', 'error');
+    return;
+  }
+
+  const vWidth = els.cameraVideo.videoWidth;
+  const vHeight = els.cameraVideo.videoHeight;
+
+  const canvas = els.cameraCanvas || document.createElement('canvas');
+  canvas.width = vWidth;
+  canvas.height = vHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(els.cameraVideo, 0, 0, vWidth, vHeight);
+
+  canvas.toBlob(blob => {
+    if (!blob) {
+      showToast('Could not capture frame. Please try again.', 'error');
+      return;
+    }
+    capturedBlob = blob;
+    const previewUrl = URL.createObjectURL(blob);
+
+    if (els.cameraPreviewImg) {
+      els.cameraPreviewImg.src = previewUrl;
+      els.cameraPreviewImg.classList.remove('hidden');
+    }
+    if (els.cameraVideo) {
+      els.cameraVideo.style.display = 'none';
+    }
+    if (els.cameraFramingGuide) {
+      els.cameraFramingGuide.style.display = 'none';
+    }
+    if (els.cameraLiveControls) {
+      els.cameraLiveControls.style.display = 'none';
+    }
+    if (els.cameraReviewControls) {
+      els.cameraReviewControls.classList.remove('hidden');
+      els.cameraReviewControls.style.display = 'flex';
+    }
+    if (els.cameraLiveDot) {
+      els.cameraLiveDot.style.display = 'none';
+    }
+  }, 'image/png', 0.95);
+}
+
+function retakePhoto() {
+  capturedBlob = null;
+  if (els.cameraPreviewImg) {
+    els.cameraPreviewImg.classList.add('hidden');
+    els.cameraPreviewImg.src = '';
+  }
+  if (els.cameraVideo) {
+    els.cameraVideo.style.display = 'block';
+  }
+  if (els.cameraFramingGuide) {
+    els.cameraFramingGuide.style.display = 'flex';
+  }
+  if (els.cameraLiveControls) {
+    els.cameraLiveControls.style.display = 'flex';
+  }
+  if (els.cameraReviewControls) {
+    els.cameraReviewControls.style.display = 'none';
+  }
+  if (els.cameraLiveDot) {
+    els.cameraLiveDot.style.display = 'block';
+  }
+}
+
+async function confirmPhoto() {
+  if (!capturedBlob) return;
+  const file = new File([capturedBlob], `camera_snap_${Date.now()}.png`, { type: 'image/png' });
+  closeCameraModal();
+  await handleFiles([file]);
+}
+
+/* ═══════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════ */
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -2121,10 +2361,62 @@ function bindEvents() {
   }
 
   /* ── Upload area ── */
-  els.uploadArea.addEventListener('click', () => els.fileInput.click());
-  els.uploadArea.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); els.fileInput.click(); }
+  els.uploadArea.addEventListener('click', e => {
+    // If the click originated from or inside the camera button, don't open the standard file input
+    if (e.target.closest('#open-camera-btn')) return;
+    els.fileInput.click();
   });
+  els.uploadArea.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      if (e.target.closest('#open-camera-btn')) return;
+      e.preventDefault();
+      els.fileInput.click();
+    }
+  });
+
+  /* ── Camera Lens Actions ── */
+  if (els.openCameraBtn) {
+    els.openCameraBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      startCamera('environment');
+    });
+  }
+  if (els.cameraModalClose) {
+    els.cameraModalClose.addEventListener('click', closeCameraModal);
+  }
+  if (els.cameraModal) {
+    els.cameraModal.addEventListener('click', e => {
+      if (e.target === els.cameraModal) closeCameraModal();
+    });
+  }
+  if (els.cameraSwitchBtn) {
+    els.cameraSwitchBtn.addEventListener('click', switchCamera);
+  }
+  if (els.cameraCaptureBtn) {
+    els.cameraCaptureBtn.addEventListener('click', capturePhoto);
+  }
+  if (els.cameraRetakeBtn) {
+    els.cameraRetakeBtn.addEventListener('click', retakePhoto);
+  }
+  if (els.cameraConfirmBtn) {
+    els.cameraConfirmBtn.addEventListener('click', confirmPhoto);
+  }
+  if (els.cameraRetryBtn) {
+    els.cameraRetryBtn.addEventListener('click', () => startCamera(cameraFacingMode));
+  }
+  if (els.cameraFallbackFileBtn) {
+    els.cameraFallbackFileBtn.addEventListener('click', () => {
+      closeCameraModal();
+      els.fileInput.click();
+    });
+  }
+  if (els.cameraFileInput) {
+    els.cameraFileInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFiles(e.target.files);
+      }
+    });
+  }
 
   els.fileInput.addEventListener('change', e => {
     if (e.target.files && e.target.files.length > 0) {
@@ -2132,11 +2424,16 @@ function bindEvents() {
     }
   });
 
-  // Ctrl+O shortcut
+  // Global Keyboard Shortcuts
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'o' && state.panel === 'hero') {
       e.preventDefault();
       els.fileInput.click();
+    }
+    if (e.key === 'Escape') {
+      if (els.cameraModal && !els.cameraModal.classList.contains('hidden')) {
+        closeCameraModal();
+      }
     }
   });
 
