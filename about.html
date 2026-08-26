@@ -59,7 +59,7 @@
       How <span style="background:linear-gradient(135deg,#7c3aed,#4f46e5);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">CodeSnapper</span> works
     </h1>
     <p class="about-lead">
-      CodeSnapper uses Google's Gemini Vision LLM — not traditional OCR — to read and transcribe source code from screenshots with surgical precision.
+      CodeSnapper uses Google's Gemini Vision LLM — not traditional OCR — to transcribe source code from single screenshots, multi-image batches, and live camera snaps with surgical precision.
     </p>
   </section>
 
@@ -72,9 +72,10 @@
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">1</div>
         <div class="step-body">
-          <h3 class="step-heading">Upload your screenshot</h3>
+          <h3 class="step-heading">Upload, Batch Drop, or Live Camera Snap</h3>
           <p class="step-detail">
-            Drop a PNG, JPG, WEBP, or GIF (up to 10 MB) into the upload zone, paste it from clipboard with <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+V</kbd>, or press <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+O</kbd> to browse. Any screenshot — terminal, IDE, browser, phone camera — works.
+            <strong>Single &amp; Batch Upload:</strong> Drag &amp; drop 1 or multiple screenshots at once — up to <strong>5 images</strong> for anonymous visitors or <strong>10 images</strong> for signed-in accounts. Keyboard shortcuts <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+V</kbd> and <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+O</kbd> are fully supported.<br>
+            <strong>📷 Use Camera / Lens:</strong> Tap "Use Camera" to point your device camera directly at code on a whiteboard, monitor, textbook, or printed document and snap a clean photo in real time with guided framing.
           </p>
         </div>
       </article>
@@ -82,10 +83,10 @@
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">2</div>
         <div class="step-body">
-          <h3 class="step-heading">Crop the code region</h3>
+          <h3 class="step-heading">Smart AI Auto Crop &amp; Drag Selection</h3>
           <p class="step-detail">
-            <strong>Auto Crop</strong> scans pixel data to detect the code block boundary, then adds an 18% generous padding so no line is ever clipped. You see an editable preview with draggable handles to fine-tune before committing.
-            <strong>Manual Crop</strong> gives you a drag-to-select canvas with zoom and pan controls — perfect for screenshots with UI chrome, watermarks, or multiple code blocks.
+            <strong>Auto Crop:</strong> Automatically analyzes pixel data to detect code block boundaries with generous padding so syntax is never truncated. In batch mode, AI Auto Crop processes every image in the queue with zero manual steps.<br>
+            <strong>Manual Crop:</strong> For complex screenshots with browser chrome or multiple code snippets, use the interactive drag-to-select tool to isolate the exact region before extraction.
           </p>
         </div>
       </article>
@@ -95,7 +96,7 @@
         <div class="step-body">
           <h3 class="step-heading">Gemini Vision extracts the code</h3>
           <p class="step-detail">
-            The cropped image is sent to <strong>Google Gemini 3.6 Flash</strong> with a highly constrained prompt that instructs it to output <em>only</em> the raw code — no explanations, no markdown fences, no commentary. The model preserves exact indentation, every special character, and every line break. Temperature is set to near-zero (0.05) for maximum determinism.
+            Images are processed via <strong>Google Gemini Vision</strong> using a strictly constrained prompt instructing the AI to output <em>only</em> clean, raw source code. Exact indentation, line breaks, brackets, and every special symbol are faithfully preserved at near-zero temperature (0.05). In batch mode, images are processed sequentially to guarantee stability and prevent rate throttling.
           </p>
         </div>
       </article>
@@ -103,9 +104,9 @@
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">4</div>
         <div class="step-body">
-          <h3 class="step-heading">Auto-detect language &amp; highlight</h3>
+          <h3 class="step-heading">Auto-detect language &amp; tabbed results</h3>
           <p class="step-detail">
-            Highlight.js analyses the extracted code to identify the programming language (Python, JavaScript, TypeScript, HTML, CSS, Java, C++, Go, Rust, Ruby, PHP, Swift, Kotlin, SQL, and 30+ more). Syntax highlighting is then applied client-side, rendering in a polished editor-style window.
+            Highlight.js detects the programming language across 35+ languages (Python, JavaScript, TypeScript, Rust, Go, C++, Java, SQL, HTML/CSS, and more) and applies syntax highlighting client-side. For batch uploads, results are cleanly arranged into interactive numbered tabs (<code style="color:var(--violet-d)">Image 1</code>, <code style="color:var(--violet-d)">Image 2</code>, etc.).
           </p>
         </div>
       </article>
@@ -113,9 +114,9 @@
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">5</div>
         <div class="step-body">
-          <h3 class="step-heading">Copy with one click</h3>
+          <h3 class="step-heading">One-click copy &amp; batch export</h3>
           <p class="step-detail">
-            Hit <strong>Copy Code</strong> — the raw, unhighlighted code is placed in your clipboard instantly. Ambiguous characters (e.g. the digit <code style="color:var(--violet-d)">1</code> vs letter <code style="color:var(--violet-d)">l</code>) are flagged in a separate warning section without altering the copyable output.
+            Copy extracted code to your clipboard with a single click. In batch mode, hit <strong>"Copy All"</strong> to export all processed snippets at once, neatly organized with comment headers (<code style="color:var(--violet-d)"># ---- Image N: filename (lang) ---- #</code>). Any character ambiguities are flagged transparently below the code window.
           </p>
         </div>
       </article>
@@ -239,16 +240,16 @@
     </div>
   </section>
 
-  <!-- ── FREE TIER ── -->
+  <!-- ── FREE TIER & BATCH LIMITS ── -->
   <section class="about-section" aria-labelledby="limits-title">
-    <p class="about-sec-label">Limits</p>
-    <h2 class="about-sec-title" id="limits-title">25 free extractions</h2>
+    <p class="about-sec-label">Limits &amp; Fair Usage</p>
+    <h2 class="about-sec-title" id="limits-title">Free extractions &amp; batch limits</h2>
     <div class="about-body">
       <p>
-        CodeSnapper gives you 25 free extractions without an account. After that, you'll be prompted to create a free account with your email and password — signed-in users get <strong>50 extractions per day</strong> on a rolling 24-hour window (not a midnight reset).
+        CodeSnapper provides 25 free extractions without an account (up to <strong>5 images per batch upload</strong>). Need more capacity? Create a free account in seconds with just your email and password — signed-in users unlock <strong>50 extractions per 24 hours</strong> on a rolling window, with support for up to <strong>10 images per batch upload</strong>.
       </p>
       <p>
-        The extraction limit exists to ensure fair usage. Each extraction is processed via Gemini Vision AI — signed-in users get 50 per day on a rolling 24-hour window.
+        Limits exist to prevent automated abuse and maintain zero-latency response times for everyone. Every extraction is processed live using state-of-the-art multimodal vision AI.
       </p>
     </div>
   </section>

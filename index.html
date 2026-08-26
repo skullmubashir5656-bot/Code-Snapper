@@ -382,14 +382,34 @@
       <p class="processing-sub" id="proc-status-text">Analyzing image with Gemini Vision</p>
     </div>
 
-    <!-- Batch Progress Bar (shown in batch mode) -->
+    <!-- Modern Batch Progress Card (shown in batch mode) -->
     <div id="batch-progress-wrap" class="batch-progress-wrap hidden">
-      <div class="batch-progress-info">
-        <span id="batch-progress-label" style="font-weight:600;color:var(--txt)">Processing image 1 of 3…</span>
-        <span id="batch-progress-pct" style="font-family:'JetBrains Mono',monospace;color:var(--violet-d);font-weight:700">0%</span>
+      <div class="batch-proc-card">
+        <div class="batch-proc-thumb-wrap">
+          <img id="batch-proc-thumb" class="batch-proc-thumb" src="" alt="Processing screenshot preview">
+          <div class="batch-proc-spinner-overlay">
+            <svg class="batch-proc-spin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/>
+            </svg>
+          </div>
+        </div>
+        <div class="batch-proc-meta">
+          <div class="batch-proc-top">
+            <span class="batch-proc-badge" id="batch-proc-badge">Image 1 of 3</span>
+            <span class="batch-proc-pct" id="batch-progress-pct">0%</span>
+          </div>
+          <p class="batch-proc-name" id="batch-proc-name">screenshot.png</p>
+          <div class="batch-proc-phase">
+            <span class="batch-phase-dot"></span>
+            <span id="batch-progress-label">Preparing image…</span>
+          </div>
+        </div>
       </div>
-      <div class="batch-progress-bar">
-        <div id="batch-progress-fill" class="batch-progress-fill" style="width:0%"></div>
+
+      <div class="batch-progress-bar-wrap">
+        <div class="batch-progress-bar">
+          <div id="batch-progress-fill" class="batch-progress-fill" style="width:0%"></div>
+        </div>
       </div>
     </div>
 

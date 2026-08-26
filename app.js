@@ -98,6 +98,9 @@ const els = {
   batchProgressLabel:   $('batch-progress-label'),
   batchProgressPct:     $('batch-progress-pct'),
   batchProgressFill:    $('batch-progress-fill'),
+  batchProcThumb:       $('batch-proc-thumb'),
+  batchProcBadge:       $('batch-proc-badge'),
+  batchProcName:        $('batch-proc-name'),
   batchTabsBar:         $('batch-tabs-bar'),
   batchTabsList:        $('batch-tabs-list'),
   batchCopyAllBtn:      $('batch-copy-all-btn'),
@@ -1794,31 +1797,36 @@ async function runBatchExtraction() {
   state.batchResults = [];
   showPanel('processing');
   els.batchProgressWrap.classList.remove('hidden');
-  els.processingTitle.textContent = 'Extracting your code batch…';
+  els.processingTitle.textContent = `Extracting batch (${total} screenshots)…`;
 
   for (let i = 0; i < total; i++) {
     const item = itemsToProcess[i];
     const num = i + 1;
     const progressPct = Math.round(((i) / total) * 100);
 
-    els.batchProgressLabel.textContent = `Processing image ${num} of ${total} (${item.name})…`;
-    els.batchProgressPct.textContent = `${progressPct}%`;
-    els.batchProgressFill.style.width = `${progressPct}%`;
+    if (els.batchProcThumb) els.batchProcThumb.src = item.dataURL;
+    if (els.batchProcBadge) els.batchProcBadge.textContent = `Image ${num} of ${total}`;
+    if (els.batchProcName) els.batchProcName.textContent = `${item.name} (${item.sizeStr})`;
+    if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'AI Auto-Cropping code area…';
+    if (els.batchProgressPct) els.batchProgressPct.textContent = `${progressPct}%`;
+    if (els.batchProgressFill) els.batchProgressFill.style.width = `${progressPct}%`;
 
     resetSteps();
     setStep(1);
-    els.procStatusText.textContent = `Image ${num}/${total}: AI Auto-Cropping code area…`;
+    els.procStatusText.textContent = `Processing image ${num} of ${total} · AI Auto Crop`;
 
     try {
       // 1. Instant AI Auto Crop
       const croppedDataURL = autoCropImage(item.img) || item.dataURL;
       setStep(1, true); setStep(2);
-      els.procStatusText.textContent = `Image ${num}/${total}: Transcribing with Gemini Vision AI…`;
+      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing with Gemini Vision…';
+      els.procStatusText.textContent = `Processing image ${num} of ${total} · Gemini Vision AI`;
 
       // 2. Call Gemini API
       const raw = await callGemini(croppedDataURL);
       setStep(2, true); setStep(3);
-      els.procStatusText.textContent = `Image ${num}/${total}: Detecting syntax & highlighting…`;
+      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Detecting syntax & highlighting…';
+      els.procStatusText.textContent = `Processing image ${num} of ${total} · Syntax Highlighting`;
 
       // 3. Parse Response
       const parsed = parseResponse(raw);
