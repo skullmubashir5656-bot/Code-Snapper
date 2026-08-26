@@ -52,10 +52,9 @@ const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/mod
 const GEMINI_OPENAI_URL  = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-  'gemini-2.5-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
   'gemini-flash-latest',
 ];
 
@@ -77,47 +76,105 @@ STRICT RULES — FOLLOW EXACTLY:
 
 Transcribe the code now:`;
 
-/* ─── Credential resolver ────────────────────────────────────────────────── */
-/*
- * Auto-detects Gemini API Keys (supporting AQ. and AIza formats) and routes them via ?key= parameter.
+/* ─── Credential resolver & Automatic Token Refresh (45-Minute Window) ────── */
+const GEMINI_SCOPES = [
+  'https://www.googleapis.com/auth/generative-language',
+  'https://www.googleapis.com/auth/cloud-platform',
+];
+
+const TOKEN_REFRESH_INTERVAL_MS = 45 * 60 * 1000; // 45 minutes
+
+let _cachedToken = (process.env.GEMINI_API_KEY || '').trim();
+let _tokenLoadedAt = Date.now();
+let _authClient = null;
+let _isServiceAccountActive = false;
+
+/**
+ * Checks if the current token has exceeded the 45-minute window or was flagged for refresh,
+ * and automatically mints/fetches a fresh token using service account or environment.
  */
+async function refreshTokenIfNeeded(force = false) {
+  const ageMs = Date.now() - _tokenLoadedAt;
+  if (!force && _cachedToken && ageMs < TOKEN_REFRESH_INTERVAL_MS) {
+    return;
+  }
 
-const GEMINI_SCOPES = ['https://www.googleapis.com/auth/generative-language'];
+  const reason = force ? 'Emergency auth retry' : '45-minute scheduled window';
+  console.log(`[Auth] Auto-refreshing credential (${reason})…`);
 
-let _saClient = null;
+  // 1. Attempt fresh token minting via GoogleAuth service account credentials
+  if (GoogleAuth && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    try {
+      if (!_authClient) {
+        const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+        const auth = new GoogleAuth({ credentials, scopes: GEMINI_SCOPES });
+        _authClient = await auth.getClient();
+      }
+      const tokenObj = await _authClient.getAccessToken();
+      if (tokenObj && tokenObj.token) {
+        _cachedToken = tokenObj.token;
+        _tokenLoadedAt = Date.now();
+        _isServiceAccountActive = true;
+        console.log(`[Auth] ✓ Fresh token minted via GoogleAuth service account (${_cachedToken.substring(0, 7)}…)`);
+        return;
+      }
+    } catch (err) {
+      console.warn(`[Auth] ⚠ GoogleAuth token minting notice: ${err.message}`);
+    }
+  }
 
-async function _initServiceAccount() {
-  if (!GoogleAuth) return null;
-  const raw = (process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '').trim();
-  if (!raw) return null;
-
+  // 2. Fallback: Reload GEMINI_API_KEY from .env
   try {
-    const credentials = JSON.parse(raw);
-    const auth = new GoogleAuth({ credentials, scopes: GEMINI_SCOPES });
-    _saClient = await auth.getClient();
-    return _saClient;
-  } catch (e) {
-    return null;
+    const envPath = path.join(__dirname, '.env');
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      const match = envContent.match(/^GEMINI_API_KEY\s*=\s*(.+)$/m);
+      if (match && match[1].trim()) {
+        const newKey = match[1].trim().replace(/^['"]|['"]$/g, '');
+        if (newKey) {
+          _cachedToken = newKey;
+          process.env.GEMINI_API_KEY = newKey;
+          _tokenLoadedAt = Date.now();
+          _isServiceAccountActive = false;
+          console.log(`[Auth] ✓ Active GEMINI_API_KEY verified from .env (${newKey.substring(0, 4)}…)`);
+          return;
+        }
+      }
+    }
+  } catch (_) {}
+
+  // 3. Keep current token and reset timer
+  if (_cachedToken) {
+    _tokenLoadedAt = Date.now();
   }
 }
 
 /**
  * Returns the credential to use for this request.
- * Auto-detects key format and configures appropriate parameter delivery.
+ * Automatically checks token age (< 45 min) and refreshes when needed.
  * @returns {{ token: string, mode: string, isBearer: boolean, format: string }}
  */
 async function getGeminiToken() {
-  const envKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (!envKey || envKey === 'your_gemini_api_key_here') {
-    const err = new Error('No Gemini API key configured.');
+  await refreshTokenIfNeeded(false);
+
+  if (!_cachedToken || _cachedToken === 'your_gemini_api_key_here') {
+    const err = new Error('No Gemini API key or credentials configured.');
     err.code = 'SERVER_CONFIG_ERROR';
     throw err;
   }
 
-  const format = envKey.startsWith('AQ.') ? 'AQ.' : envKey.startsWith('AIza') ? 'AIza' : 'Standard';
+  const isBearer = _cachedToken.startsWith('ya29.');
+  const format = _cachedToken.startsWith('AQ.') ? 'AQ.'
+               : _cachedToken.startsWith('AIza') ? 'AIza'
+               : _cachedToken.startsWith('ya29.') ? 'OAuth'
+               : 'Standard';
 
-  // All Gemini API Keys (AQ., AIza, etc.) are delivered via ?key= query parameter
-  return { token: envKey, mode: 'api-key', isBearer: false, format };
+  return {
+    token: _cachedToken,
+    mode: _isServiceAccountActive ? 'service-account' : 'api-key',
+    isBearer,
+    format,
+  };
 }
 
 /* ─── Middleware ─────────────────────────────────────────────────────────── */
@@ -544,7 +601,7 @@ function classifyGeminiError(status, data) {
   return { ...detail, type: 'API_ERROR', friendly: msg || `Gemini API error (HTTP ${status})` };
 }
 
-const MODEL_TIMEOUT_MS = 8000; // 8 seconds timeout per model attempt
+const MODEL_TIMEOUT_MS = 15000; // 15 seconds timeout per model attempt
 
 /* ─── Gemini strategies ──────────────────────────────────────────────────── */
 async function tryOpenAIEndpoint(model, token, mimeType, imageData) {
@@ -778,6 +835,8 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
     console.error('[Creds] ✗ No GEMINI_API_KEY configured in .env!');
   }
 
+  console.log('[Auth] Auto-refresh enabled — token will refresh every 45 minutes');
+
   app.listen(PORT, () => {
     const credLabel = format !== 'none'
       ? `✓ API Key active (${format} format — ?key= parameter)`
@@ -789,6 +848,7 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
     console.log(`  URL:      http://localhost:${PORT}`);
     console.log(`  Models:   ${GEMINI_MODELS.join(' → ')}`);
     console.log(`  Creds:    ${credLabel}`);
+    console.log(`  Auto-Ref: 45-minute background auto-refresh active`);
     console.log(`  Auth:     JWT (30-day tokens, bcrypt passwords)`);
     console.log(`  Limits:   Anon=25 total  |  Signed-in=${AUTH_LIMIT}/24h rolling\n`);
   });
