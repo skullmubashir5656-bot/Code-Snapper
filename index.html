@@ -109,7 +109,6 @@
     <div class="upload-area" id="upload-area" role="button" tabindex="0"
          aria-label="Upload image: click, drag-and-drop, or paste from clipboard">
       <input type="file" id="file-input" accept="image/*" multiple class="sr-only" aria-label="Choose image file">
-      <input type="file" id="camera-file-input" accept="image/*" capture="environment" class="sr-only" aria-label="Take photo with camera">
 
       <div class="upload-icon-wrap" aria-hidden="true">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -132,8 +131,9 @@
       </div>
     </div>
 
-    <!-- PROMINENT CAMERA ACTION CARD -->
-    <div class="camera-action-card" id="open-camera-btn" role="button" tabindex="0" aria-label="Use camera to capture code from screen, paper, or whiteboard">
+    <!-- PROMINENT CAMERA ACTION CARD (Native Camera Trigger) -->
+    <label for="camera-file-input" class="camera-action-card" id="open-camera-btn" role="button" tabindex="0" aria-label="Use camera to capture code from screen, paper, or whiteboard">
+      <input type="file" id="camera-file-input" accept="image/*" capture="environment" class="sr-only" aria-label="Take photo with camera">
       <div class="camera-action-icon-wrap">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -152,7 +152,7 @@
           <polyline points="9 18 15 12 9 6"/>
         </svg>
       </div>
-    </div>
+    </label>
 
     <div class="upload-meta" aria-label="Upload limits & security">
       <span class="trust-badge">

@@ -2382,19 +2382,22 @@ function bindEvents() {
 
   if (els.openCameraBtn) {
     els.openCameraBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      if (isMobilePlatform() && els.cameraFileInput) {
-        // On mobile devices (iOS Safari, Android Chrome, etc.), trigger native phone camera directly
-        els.cameraFileInput.click();
-      } else {
-        // On desktop / webcam devices, open live camera viewfinder modal
+      if (e.target === els.cameraFileInput) return;
+      if (!isMobilePlatform()) {
+        // On desktop browsers with webcam, open the live camera viewfinder modal
+        e.preventDefault();
         startCamera('environment');
       }
+      // On mobile devices, native <label for="camera-file-input"> triggers the capture="environment" input directly
     });
     els.openCameraBtn.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        els.openCameraBtn.click();
+        if (isMobilePlatform() && els.cameraFileInput) {
+          els.cameraFileInput.click();
+        } else {
+          startCamera('environment');
+        }
       }
     });
   }
