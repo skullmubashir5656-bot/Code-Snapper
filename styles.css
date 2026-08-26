@@ -407,34 +407,132 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   border-radius: 4px; color: var(--violet-d); font-weight: 700;
 }
 
-.upload-camera-btn {
-  display: inline-flex;
+/* ============================================================
+   PROMINENT CAMERA ACTION CARD
+   ============================================================ */
+.camera-action-card {
+  margin-top: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 14px;
-  background: rgba(124, 58, 237, 0.18);
-  border: 1px solid rgba(167, 139, 250, 0.45);
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  color: #f1f5f9;
-  font-weight: 600;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(124,58,237,.20) 0%, rgba(99,102,241,.14) 100%);
+  border: 1.5px solid rgba(167,139,250,.45);
+  border-radius: var(--r-xl);
   cursor: pointer;
   transition: all var(--t-base);
-  font-family: inherit;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.2);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0,0,0,.28), 0 0 24px rgba(124,58,237,.14);
+  text-align: left;
 }
-.upload-camera-btn:hover {
-  background: rgba(124, 58, 237, 0.32);
-  border-color: var(--violet-d);
-  color: #ffffff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.4);
+
+.camera-action-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(124,58,237,.32) 0%, rgba(99,102,241,.24) 100%);
+  opacity: 0;
+  transition: opacity var(--t-base);
 }
-.upload-camera-btn svg {
-  width: 14px;
-  height: 14px;
-  color: var(--violet-d);
+
+.camera-action-card:hover {
+  border-color: var(--violet);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 26px rgba(124,58,237,.38), 0 0 32px rgba(124,58,237,.22);
+}
+.camera-action-card:hover::before {
+  opacity: 1;
+}
+
+.camera-action-icon-wrap {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--r-lg);
+  background: var(--g-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 4px 12px rgba(124,58,237,.45);
+  transition: transform var(--t-spring);
+}
+.camera-action-card:hover .camera-action-icon-wrap {
+  transform: scale(1.08) rotate(-4deg);
+}
+.camera-action-icon-wrap svg {
+  width: 22px;
+  height: 22px;
+  color: #ffffff;
+}
+
+.camera-action-content {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.camera-action-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+  flex-wrap: wrap;
+}
+.camera-action-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+.camera-action-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  background: rgba(34,201,138,.16);
+  border: 1px solid rgba(34,201,138,.45);
+  color: #34d399;
+}
+.camera-action-sub {
+  font-size: 13px;
+  color: #cbd5e1;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.camera-action-arrow {
+  position: relative;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.07);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform var(--t-spring), background var(--t-base);
+}
+.camera-action-arrow svg {
+  width: 16px;
+  height: 16px;
+  color: var(--violet-d);
+  transition: color var(--t-base);
+}
+.camera-action-card:hover .camera-action-arrow {
+  transform: translateX(3px);
+  background: rgba(124,58,237,.35);
+}
+.camera-action-card:hover .camera-action-arrow svg {
+  color: #ffffff;
 }
 
 .upload-meta {
@@ -2170,13 +2268,27 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   }
 
   /* Camera Mobile Styles */
-  .upload-camera-btn {
-    width: 100%;
-    justify-content: center;
-    padding: 10px 16px;
-    font-size: 13.5px;
-    min-height: 44px;
-    margin-top: 4px;
+  .camera-action-card {
+    margin-top: 14px;
+    padding: 16px 14px;
+    gap: 12px;
+    border-width: 2px;
+    background: linear-gradient(135deg, rgba(124,58,237,.25) 0%, rgba(99,102,241,.18) 100%);
+    box-shadow: 0 4px 20px rgba(0,0,0,.35), 0 0 28px rgba(124,58,237,.25);
+  }
+  .camera-action-icon-wrap {
+    width: 44px;
+    height: 44px;
+  }
+  .camera-action-icon-wrap svg {
+    width: 22px;
+    height: 22px;
+  }
+  .camera-action-title {
+    font-size: 15.5px;
+  }
+  .camera-action-sub {
+    font-size: 12.5px;
   }
   .camera-modal-content {
     padding: 16px;

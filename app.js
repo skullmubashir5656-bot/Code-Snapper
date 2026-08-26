@@ -2375,10 +2375,27 @@ function bindEvents() {
   });
 
   /* ── Camera Lens Actions ── */
+  function isMobilePlatform() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+      (window.matchMedia && window.matchMedia('(max-width: 768px)').matches && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
+  }
+
   if (els.openCameraBtn) {
     els.openCameraBtn.addEventListener('click', e => {
       e.stopPropagation();
-      startCamera('environment');
+      if (isMobilePlatform() && els.cameraFileInput) {
+        // On mobile devices (iOS Safari, Android Chrome, etc.), trigger native phone camera directly
+        els.cameraFileInput.click();
+      } else {
+        // On desktop / webcam devices, open live camera viewfinder modal
+        startCamera('environment');
+      }
+    });
+    els.openCameraBtn.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        els.openCameraBtn.click();
+      }
     });
   }
   if (els.cameraModalClose) {

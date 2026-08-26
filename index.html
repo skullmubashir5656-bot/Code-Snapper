@@ -123,16 +123,34 @@
       <p class="upload-desc">Drag &amp; drop 1 or multiple images, click to browse, or paste</p>
 
       <div class="upload-divider" aria-hidden="true">
-        <span>or choose an option</span>
+        <span>or use keyboard shortcuts</span>
       </div>
 
-      <div class="upload-shortcuts" aria-label="Upload options and shortcuts">
+      <div class="upload-shortcuts" aria-label="Keyboard shortcuts">
         <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>V</kbd> Paste image</span>
-        <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>O</kbd> Browse</span>
-        <button type="button" class="upload-camera-btn" id="open-camera-btn" aria-label="Use device camera to capture code">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-          <span>Use Camera</span>
-        </button>
+        <span class="kbd-tag"><kbd>Ctrl</kbd>+<kbd>O</kbd> Open file</span>
+      </div>
+    </div>
+
+    <!-- PROMINENT CAMERA ACTION CARD -->
+    <div class="camera-action-card" id="open-camera-btn" role="button" tabindex="0" aria-label="Use camera to capture code from screen, paper, or whiteboard">
+      <div class="camera-action-icon-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+      </div>
+      <div class="camera-action-content">
+        <div class="camera-action-title-row">
+          <span class="camera-action-title">📷 Use Camera</span>
+          <span class="camera-action-badge">Live Snap</span>
+        </div>
+        <p class="camera-action-sub">Point your camera at any code on screen, paper, or whiteboard</p>
+      </div>
+      <div class="camera-action-arrow" aria-hidden="true">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
       </div>
     </div>
 
