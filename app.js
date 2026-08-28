@@ -2798,6 +2798,173 @@ function enterManualCrop() {
 }
 
 /* ═══════════════════════════════════════════════
+   3D HERO PARTICLES (Three.js Ambient Code Symbols)
+═══════════════════════════════════════════════ */
+let heroParticlesAnimationId = null;
+
+function initHeroParticles() {
+  const canvas = document.getElementById('hero-particles-canvas');
+  if (!canvas || typeof THREE === 'undefined') return;
+
+  const heroPanel = document.getElementById('hero-panel');
+  if (!heroPanel) return;
+
+  // Scene & Perspective Camera
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, heroPanel.clientWidth / Math.max(heroPanel.clientHeight, 400), 0.1, 1000);
+  camera.position.z = 30;
+
+  // Renderer with low-power battery optimization
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      powerPreference: 'low-power'
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(heroPanel.clientWidth, heroPanel.clientHeight);
+  } catch (e) {
+    console.warn('[3D Particles] WebGL initialization note:', e.message);
+    return;
+  }
+
+  // Symbol Textures Generator (Crisp 2D canvas sprites)
+  const symbols = ['{ }', '< >', '( )', ';', '#', '//', '[ ]', '=>', ':=', '!=', '::', 'fn'];
+  const colors = ['#a78bfa', '#818cf8', '#7c3aed', '#6366f1', '#38bdf8', '#c084fc'];
+  const textures = [];
+
+  symbols.forEach(sym => {
+    colors.forEach(col => {
+      const texCanvas = document.createElement('canvas');
+      texCanvas.width = 128;
+      texCanvas.height = 128;
+      const ctx = texCanvas.getContext('2d');
+      ctx.font = 'bold 42px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = col;
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 10;
+      ctx.fillText(sym, 64, 64);
+      const texture = new THREE.CanvasTexture(texCanvas);
+      texture.minFilter = THREE.LinearFilter;
+      textures.push(texture);
+    });
+  });
+
+  // Particle Count (Reduce by 70% on mobile for performance)
+  const isMobile = window.innerWidth < 768 || ('ontouchstart' in window);
+  const particleCount = isMobile ? 12 : 38;
+
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    const tex = textures[Math.floor(Math.random() * textures.length)];
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0.18 + Math.random() * 0.42,
+      blending: THREE.AdditiveBlending
+    });
+    const sprite = new THREE.Sprite(mat);
+    const scale = 2.0 + Math.random() * 2.4;
+    sprite.scale.set(scale, scale, 1);
+
+    // Initial randomized position
+    sprite.position.set(
+      (Math.random() - 0.5) * 55,
+      (Math.random() - 0.5) * 45,
+      (Math.random() - 0.5) * 20
+    );
+
+    // Drift properties
+    sprite.userData = {
+      vy: 0.005 + Math.random() * 0.008,
+      vRot: (Math.random() - 0.5) * 0.005,
+      baseX: sprite.position.x,
+      swayOffset: Math.random() * Math.PI * 2,
+      swaySpeed: 0.008 + Math.random() * 0.012
+    };
+
+    scene.add(sprite);
+    particles.push(sprite);
+  }
+
+  // Animation Loop with Visibility & Panel Checks
+  function animate() {
+    heroParticlesAnimationId = requestAnimationFrame(animate);
+
+    // Pause rendering if tab is hidden or not on hero panel
+    if (document.hidden || state.panel !== 'hero') return;
+
+    particles.forEach(p => {
+      p.position.y += p.userData.vy;
+      p.userData.swayOffset += p.userData.swaySpeed;
+      p.position.x = p.userData.baseX + Math.sin(p.userData.swayOffset) * 1.5;
+      p.material.rotation += p.userData.vRot;
+
+      // Wrap around top boundary to bottom
+      if (p.position.y > 24) {
+        p.position.y = -24;
+        p.userData.baseX = (Math.random() - 0.5) * 55;
+        p.position.x = p.userData.baseX;
+      }
+    });
+
+    renderer.render(scene, camera);
+  }
+
+  heroParticlesAnimationId = requestAnimationFrame(animate);
+
+  // Page Visibility API — pause animation when tab is inactive
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      if (heroParticlesAnimationId) cancelAnimationFrame(heroParticlesAnimationId);
+      heroParticlesAnimationId = null;
+    } else {
+      if (!heroParticlesAnimationId && state.panel === 'hero') {
+        heroParticlesAnimationId = requestAnimationFrame(animate);
+      }
+    }
+  });
+
+  // Resize Handler
+  window.addEventListener('resize', () => {
+    if (!heroPanel || !renderer || !camera) return;
+    const w = heroPanel.clientWidth;
+    const h = heroPanel.clientHeight;
+    camera.aspect = w / Math.max(h, 400);
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   3D TILT EFFECT (vanilla-tilt.js)
+═══════════════════════════════════════════════ */
+function init3DTilt() {
+  if (typeof VanillaTilt === 'undefined') return;
+
+  // Check if device supports hover with a fine pointer (skip on mobile touch screens)
+  const isFinePointer = window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  if (!isFinePointer) return;
+
+  const tiltCards = document.querySelectorAll('.camera-action-card, .crop-card, .trust-badge');
+  if (tiltCards.length > 0) {
+    VanillaTilt.init(tiltCards, {
+      max: 8,              // Max tilt 8 degrees
+      speed: 400,          // Transition speed
+      scale: 1.02,         // 1.02 scale on hover
+      glare: true,         // Glare effect
+      'max-glare': 0.1,    // Max glare opacity 0.1
+      perspective: 1000,
+      easing: 'cubic-bezier(.03,.98,.52,.99)',
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════
    INIT
 ═══════════════════════════════════════════════ */
 function init() {
@@ -2814,6 +2981,11 @@ function init() {
   if (state.authToken) {
     refreshAuthState().then(updateUserPill);
   }
+
+  // Initialize 3D effects
+  initHeroParticles();
+  init3DTilt();
+
   console.log('%c CodeSnapper loaded ❖', 'color:#a78bfa;font-weight:bold;font-size:16px');
 }
 
