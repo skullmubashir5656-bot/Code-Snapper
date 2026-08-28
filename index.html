@@ -44,6 +44,10 @@
     <nav class="nav" role="navigation" aria-label="Main navigation">
       <a href="index.html" class="nav-link active">Extract</a>
       <a href="about.html" class="nav-link">About</a>
+      <button class="nav-link nav-history-btn hidden" id="nav-history-btn" aria-label="View extraction history" type="button" style="display:none;align-items:center;gap:6px;background:none;border:none;cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;color:var(--txt-2);padding:6px 12px;border-radius:var(--r-md);transition:all var(--t-base)">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>History</span>
+      </button>
 
       <!-- Signed-out: sign-in button -->
       <button class="btn btn-ghost btn-sm nav-signin-btn hidden" id="nav-signin-btn"
@@ -75,6 +79,10 @@
 <div id="mobile-nav" class="mobile-nav hidden" role="navigation" aria-label="Mobile navigation">
   <div class="mobile-nav-inner">
     <a href="index.html" class="mobile-nav-link active">Extract</a>
+    <button class="mobile-nav-link mobile-nav-history hidden" id="mobile-nav-history" type="button" style="display:none;align-items:center;gap:8px;background:none;border:none;width:100%;text-align:left;cursor:pointer;font-family:inherit">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>History</span>
+    </button>
     <a href="about.html" class="mobile-nav-link">About</a>
     <a href="terms.html" class="mobile-nav-link">Terms</a>
     <a href="#report-issue" class="mobile-nav-link" onclick="document.getElementById('mobile-nav').classList.add('hidden'); openFeedbackModal();">Report an Issue</a>
@@ -821,6 +829,64 @@
     </div>
 
   </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     EXTRACTION HISTORY DRAWER
+══════════════════════════════════════ -->
+<div id="history-drawer-wrap" class="history-drawer-wrap hidden" aria-modal="true" role="dialog" aria-labelledby="history-title">
+  <div id="history-backdrop" class="history-backdrop" tabindex="-1"></div>
+  <aside class="history-drawer" id="history-drawer" aria-label="Extraction History">
+    <div class="history-header">
+      <div class="history-header-left">
+        <div class="history-header-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <div>
+          <div class="history-title-row">
+            <h2 id="history-title" class="history-title">Extraction History</h2>
+            <span class="history-count-badge" id="history-count-badge">0</span>
+          </div>
+          <p class="history-sub">Saved for 90 days · Max 100 entries</p>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-icon history-close-btn" id="history-close-btn" aria-label="Close history panel">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <!-- History list container -->
+    <div class="history-body" id="history-body">
+      <!-- Loading state -->
+      <div id="history-loading" class="history-loading hidden">
+        <div class="spinner-sm"></div>
+        <span>Loading your history…</span>
+      </div>
+
+      <!-- Empty state -->
+      <div id="history-empty" class="history-empty hidden">
+        <div class="history-empty-icon" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+            <polyline points="10 9 9 9 8 9"/>
+          </svg>
+        </div>
+        <h3 class="history-empty-title">No extractions yet</h3>
+        <p class="history-empty-desc">Your history will appear here after your first extraction.</p>
+      </div>
+
+      <!-- Cards Container -->
+      <div id="history-list" class="history-list">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </aside>
 </div>
 
 <!-- Error Modal -->

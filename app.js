@@ -180,6 +180,18 @@ const els = {
   heroAuthCallout:$('hero-auth-callout'),
   heroSigninBtn:  $('hero-signin-btn'),
 
+  // extraction history drawer elements
+  navHistoryBtn:        $('nav-history-btn'),
+  mobileNavHistory:     $('mobile-nav-history'),
+  historyDrawerWrap:    $('history-drawer-wrap'),
+  historyBackdrop:      $('history-backdrop'),
+  historyDrawer:        $('history-drawer'),
+  historyCloseBtn:      $('history-close-btn'),
+  historyCountBadge:    $('history-count-badge'),
+  historyLoading:       $('history-loading'),
+  historyEmpty:         $('history-empty'),
+  historyList:          $('history-list'),
+
   errorModal:       $('error-modal'),
   errorModalMsg:    $('error-modal-msg'),
   errorModalClose:  $('error-modal-close'),
@@ -328,13 +340,34 @@ async function refreshAuthState() {
   } catch { /* offline — keep cached state */ }
 }
 
-/* ─── EXTRACTION HISTORY (Signed-in users) ─────────────────────── */
-async function fetchHistory() {
-  if (!els.historySection || !els.historyList) return;
+/* ─── EXTRACTION HISTORY DRAWER (Signed-in users) ─────────────────────── */
+function openHistoryDrawer() {
   if (!state.authToken) {
-    els.historySection.classList.add('hidden');
+    openAuthModal({ msg: 'Sign in to view your 90-day extraction history.' });
     return;
   }
+  if (els.historyDrawerWrap) {
+    els.historyDrawerWrap.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+    fetchHistory();
+  }
+}
+
+function closeHistoryDrawer() {
+  if (els.historyDrawerWrap) {
+    els.historyDrawerWrap.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+}
+
+async function fetchHistory() {
+  if (!state.authToken) {
+    if (els.historyDrawerWrap) els.historyDrawerWrap.classList.add('hidden');
+    return;
+  }
+
+  if (els.historyLoading) els.historyLoading.classList.remove('hidden');
+  if (els.historyEmpty) els.historyEmpty.classList.add('hidden');
 
   try {
     const res = await fetch('/api/history', {
@@ -344,69 +377,200 @@ async function fetchHistory() {
       const data = await res.json();
       renderHistory(data.history || []);
     } else {
-      els.historySection.classList.add('hidden');
+      if (els.historyEmpty) els.historyEmpty.classList.remove('hidden');
     }
   } catch {
-    els.historySection.classList.add('hidden');
+    if (els.historyEmpty) els.historyEmpty.classList.remove('hidden');
+  } finally {
+    if (els.historyLoading) els.historyLoading.classList.add('hidden');
   }
 }
 
-function formatRelativeTime(timestamp) {
-  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-  if (diffSec < 60) return 'just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}h ago`;
-  const diffDay = Math.floor(diffHour / 24);
-  return `${diffDay}d ago`;
+function formatHistoryDate(timestamp) {
+  const d = new Date(timestamp);
+  return d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
 }
 
 function renderHistory(items) {
+  window._recentExtractions = items || [];
+  const count = (items || []).length;
+  if (els.historyCountBadge) els.historyCountBadge.textContent = count;
+
   if (!items || items.length === 0) {
-    els.historySection.classList.add('hidden');
+    if (els.historyEmpty) els.historyEmpty.classList.remove('hidden');
+    if (els.historyList) els.historyList.innerHTML = '';
     return;
   }
 
-  els.historySection.classList.remove('hidden');
+  if (els.historyEmpty) els.historyEmpty.classList.add('hidden');
+  if (!els.historyList) return;
+
   els.historyList.innerHTML = items.map(item => {
-    const snippet = item.codeText.replace(/\s+/g, ' ').slice(0, 65) + (item.codeText.length > 65 ? '…' : '');
-    const timeStr = formatRelativeTime(item.createdAt);
-    const langLabel = (item.lang && item.lang !== 'auto') ? item.lang : 'CODE';
+    const rawCode = item.extractedCode || '';
+    const previewLines = rawCode.split('\n').slice(0, 3).join('\n');
+    const langLabel = (item.language && item.language !== 'auto') ? item.language : 'code';
+    const dateStr = formatHistoryDate(item.createdAt);
+    const safeName = item.customName || 'Extraction';
+    const expiresInStr = (item.expiresInDays !== undefined)
+      ? (item.expiresInDays <= 0 ? 'Expires today' : `Expires in ${item.expiresInDays}d`)
+      : 'Expires in 90d';
 
     return `
-      <div class="history-item" role="listitem" data-id="${item.id}">
-        <div class="history-item-left">
+      <div class="history-card" role="listitem" data-id="${item.id}">
+        <div class="history-card-top">
+          <div class="history-card-name-wrap">
+            <span class="history-card-name" onclick="startRenameHistoryItem(${item.id}, '${escapeHtml(safeName).replace(/'/g, "\\'")}', this.closest('.history-card'))" title="Click to rename">
+              ${escapeHtml(safeName)}
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </span>
+          </div>
           <span class="history-lang-badge">${escapeHtml(langLabel)}</span>
-          <span class="history-code-snippet" title="${escapeHtml(item.codeText.slice(0, 200))}">${escapeHtml(snippet)}</span>
         </div>
-        <div class="history-item-right">
-          <span class="history-time">${timeStr}</span>
-          <button class="btn btn-secondary history-restore-btn" onclick="restoreHistoryItem(${item.id})">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-            Restore
+
+        <div class="history-meta-row">
+          <span class="history-date">${dateStr}</span>
+          <span>·</span>
+          <span class="history-expiry-tag" title="Auto-deletes after 90 days">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${expiresInStr}
+          </span>
+        </div>
+
+        <pre class="history-code-preview"><code>${escapeHtml(previewLines || '(Empty extraction)')}</code></pre>
+
+        <div class="history-card-actions">
+          <button class="btn btn-primary btn-sm history-load-btn" onclick="loadHistoryCode(${item.id})">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            Load Code
+          </button>
+          <button class="btn btn-ghost btn-sm history-del-btn" onclick="deleteHistoryItem(${item.id}, this.closest('.history-card'))" title="Delete from history">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Delete
           </button>
         </div>
       </div>
     `;
   }).join('');
-
-  window._recentExtractions = items;
 }
 
-window.restoreHistoryItem = function(id) {
+window.loadHistoryCode = function(id) {
   const item = (window._recentExtractions || []).find(i => i.id === id);
   if (!item) return;
 
-  const { html, lang } = detectAndHighlight(item.codeText);
-  state.extractedCode = item.codeText;
+  const rawCode = item.extractedCode || '';
+  const { html, lang } = detectAndHighlight(rawCode);
+  state.extractedCode = rawCode;
   state.detectedLang  = lang;
   state.ambiguities   = [];
-  state.rawResponse   = item.codeText;
+  state.rawResponse   = rawCode;
 
-  displayResult(item.codeText, html, lang, []);
-  showToast('Restored extraction from history!');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  displayResult(rawCode, html, lang, []);
+  closeHistoryDrawer();
+  showToast(`Loaded "${item.customName || 'code'}" from history`);
+};
+
+window.startRenameHistoryItem = function(id, currentName, cardEl) {
+  if (!cardEl) return;
+  const nameWrap = cardEl.querySelector('.history-card-name-wrap');
+  if (!nameWrap) return;
+
+  nameWrap.innerHTML = `
+    <form class="history-rename-form" onsubmit="return false;">
+      <input type="text" class="history-rename-input" value="${escapeHtml(currentName)}" maxlength="60" aria-label="Rename extraction">
+      <button type="button" class="btn btn-primary btn-sm history-save-btn" style="padding:4px 8px;font-size:12px">Save</button>
+      <button type="button" class="btn btn-ghost btn-sm history-cancel-btn" style="padding:4px 8px;font-size:12px">Cancel</button>
+    </form>
+  `;
+
+  const input = nameWrap.querySelector('.history-rename-input');
+  const saveBtn = nameWrap.querySelector('.history-save-btn');
+  const cancelBtn = nameWrap.querySelector('.history-cancel-btn');
+
+  input.focus();
+  input.select();
+
+  async function doSave() {
+    const newName = input.value.trim();
+    if (!newName || newName === currentName) {
+      finish(currentName);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/history/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${state.authToken}`
+        },
+        body: JSON.stringify({ customName: newName })
+      });
+      if (res.ok) {
+        finish(newName);
+        showToast('Renamed extraction');
+        if (window._recentExtractions) {
+          const it = window._recentExtractions.find(x => x.id === id);
+          if (it) it.customName = newName;
+        }
+      } else {
+        showToast('Could not rename extraction');
+        finish(currentName);
+      }
+    } catch {
+      showToast('Network error while renaming');
+      finish(currentName);
+    }
+  }
+
+  function finish(finalName) {
+    nameWrap.innerHTML = `
+      <span class="history-card-name" onclick="startRenameHistoryItem(${id}, '${escapeHtml(finalName).replace(/'/g, "\\'")}', this.closest('.history-card'))" title="Click to rename">
+        ${escapeHtml(finalName)}
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </span>
+    `;
+  }
+
+  saveBtn.addEventListener('click', doSave);
+  cancelBtn.addEventListener('click', () => finish(currentName));
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); doSave(); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(currentName); }
+  });
+};
+
+window.deleteHistoryItem = async function(id, cardEl) {
+  if (!state.authToken) return;
+  try {
+    const res = await fetch(`/api/history/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${state.authToken}` }
+    });
+    if (res.ok) {
+      if (cardEl) {
+        cardEl.style.transition = 'opacity 0.2s, transform 0.2s';
+        cardEl.style.opacity = '0';
+        cardEl.style.transform = 'translateX(20px)';
+        setTimeout(() => {
+          cardEl.remove();
+          if (window._recentExtractions) {
+            window._recentExtractions = window._recentExtractions.filter(x => x.id !== id);
+            const count = window._recentExtractions.length;
+            if (els.historyCountBadge) els.historyCountBadge.textContent = count;
+            if (count === 0 && els.historyEmpty) els.historyEmpty.classList.remove('hidden');
+          }
+        }, 200);
+      }
+      showToast('Deleted from history');
+    } else {
+      showToast('Could not delete history item');
+    }
+  } catch {
+    showToast('Network error while deleting');
+  }
 };
 
 /* Update the header user pill */
@@ -416,6 +580,14 @@ function updateUserPill() {
   els.userPill.classList.toggle('hidden', !signedIn);
   if (els.heroAuthCallout) {
     els.heroAuthCallout.classList.toggle('hidden', signedIn);
+  }
+  if (els.navHistoryBtn) {
+    els.navHistoryBtn.classList.toggle('hidden', !signedIn);
+    els.navHistoryBtn.style.display = signedIn ? 'inline-flex' : 'none';
+  }
+  if (els.mobileNavHistory) {
+    els.mobileNavHistory.classList.toggle('hidden', !signedIn);
+    els.mobileNavHistory.style.display = signedIn ? 'flex' : 'none';
   }
   if (signedIn) {
     // Truncate email for small screens
@@ -428,7 +600,7 @@ function updateUserPill() {
     els.userPillRemaining.style.color = (rem !== null && rem <= 5) ? 'var(--warning)' : 'var(--txt-2)';
     fetchHistory();
   } else {
-    if (els.historySection) els.historySection.classList.add('hidden');
+    closeHistoryDrawer();
   }
   // Keep mobile drawer auth section in sync
   updateMobileNavAuth();
@@ -2660,6 +2832,23 @@ function bindEvents() {
     });
   }
 
+  /* ── History drawer ── */
+  if (els.navHistoryBtn) {
+    els.navHistoryBtn.addEventListener('click', openHistoryDrawer);
+  }
+  if (els.mobileNavHistory) {
+    els.mobileNavHistory.addEventListener('click', () => {
+      if (mobileNav) mobileNav.classList.add('hidden');
+      openHistoryDrawer();
+    });
+  }
+  if (els.historyCloseBtn) {
+    els.historyCloseBtn.addEventListener('click', closeHistoryDrawer);
+  }
+  if (els.historyBackdrop) {
+    els.historyBackdrop.addEventListener('click', closeHistoryDrawer);
+  }
+
   /* ── Close modals on backdrop click ── */
   [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
     if (modal) modal.addEventListener('click', e => {
@@ -2667,12 +2856,15 @@ function bindEvents() {
     });
   });
 
-  /* ── Close modals on Escape ── */
+  /* ── Close modals and drawer on Escape ── */
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
         if (modal && !modal.classList.contains('hidden')) closeModal(modal);
       });
+      if (els.historyDrawerWrap && !els.historyDrawerWrap.classList.contains('hidden')) {
+        closeHistoryDrawer();
+      }
     }
   });
 }

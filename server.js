@@ -201,13 +201,6 @@ db.exec(`
     count INTEGER DEFAULT 0,
     last_used_at INTEGER NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS extraction_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_email TEXT NOT NULL,
-    code_text TEXT NOT NULL,
-    lang TEXT NOT NULL DEFAULT 'auto',
-    created_at INTEGER NOT NULL
-  );
   CREATE TABLE IF NOT EXISTS feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT NOT NULL,
@@ -216,6 +209,64 @@ db.exec(`
     user_email TEXT,
     page TEXT
   );
+`);
+
+// Dynamic schema migration for extraction_history (90-day retention schema)
+const historyTableInfo = db.prepare(`PRAGMA table_info(extraction_history)`).all();
+if (historyTableInfo.length > 0) {
+  const colNames = historyTableInfo.map(c => c.name);
+  if (!colNames.includes('custom_name') || !colNames.includes('extracted_code') || !colNames.includes('expires_at')) {
+    console.log('[Database] Upgrading extraction_history table to 90-day retention schema...');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS extraction_history_v2 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_email TEXT NOT NULL,
+        custom_name TEXT NOT NULL,
+        extracted_code TEXT NOT NULL,
+        language TEXT NOT NULL DEFAULT 'auto',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+    `);
+    try {
+      const oldRows = db.prepare(`SELECT * FROM extraction_history`).all();
+      const insertStmt = db.prepare(`
+        INSERT INTO extraction_history_v2 (id, user_email, custom_name, extracted_code, language, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const r of oldRows) {
+        const code = r.extracted_code || r.code_text || '';
+        const lang = r.language || r.lang || 'auto';
+        const createdAt = r.created_at || Date.now();
+        const expiresAt = r.expires_at || (createdAt + 90 * 24 * 60 * 60 * 1000);
+        const customName = r.custom_name || `Extraction · ${new Date(createdAt).toLocaleDateString()}`;
+        insertStmt.run(r.id, r.user_email, customName, code, lang, createdAt, expiresAt);
+      }
+    } catch (e) {
+      console.warn('[Database] History migration note:', e.message);
+    }
+    db.exec(`
+      DROP TABLE extraction_history;
+      ALTER TABLE extraction_history_v2 RENAME TO extraction_history;
+    `);
+    console.log('[Database] ✓ extraction_history table upgraded successfully');
+  }
+} else {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS extraction_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_email TEXT NOT NULL,
+      custom_name TEXT NOT NULL,
+      extracted_code TEXT NOT NULL,
+      language TEXT NOT NULL DEFAULT 'auto',
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL
+    );
+  `);
+}
+db.exec(`
+  CREATE INDEX IF NOT EXISTS idx_history_user_created ON extraction_history(user_email, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_history_expires_at ON extraction_history(expires_at);
 `);
 
 // Auto-migrate legacy users.json if present
@@ -310,49 +361,87 @@ function getRemaining(user) {
   return Math.max(0, AUTH_LIMIT - (user.countInWindow || 0));
 }
 
-/* ─── Extraction History Helpers (7-day retention, max 10 per user) ───────── */
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+/* ─── Extraction History Helpers (90-day retention, max 100 per user) ──────── */
+const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+const MAX_HISTORY_PER_USER = 100;
 
-function cleanOldHistory() {
-  const cutoff = Date.now() - SEVEN_DAYS_MS;
-  db.prepare('DELETE FROM extraction_history WHERE created_at < ?').run(cutoff);
+function generateDefaultHistoryName(lang, timestamp) {
+  const d = new Date(timestamp || Date.now());
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = monthNames[d.getMonth()];
+  const day = d.getDate();
+  const langDisplay = (lang && lang !== 'auto' && lang !== 'plaintext')
+    ? lang.charAt(0).toUpperCase() + lang.slice(1)
+    : 'Code';
+  return `${langDisplay} · ${month} ${day}`;
 }
 
-function saveExtractionHistory(email, codeText, lang = 'auto') {
-  if (!email || !codeText) return;
-  cleanOldHistory();
+function cleanupExpiredHistory() {
   const now = Date.now();
-  db.prepare(`
-    INSERT INTO extraction_history (user_email, code_text, lang, created_at)
-    VALUES (?, ?, ?, ?)
-  `).run(email, codeText, lang || 'auto', now);
+  const res = db.prepare('DELETE FROM extraction_history WHERE expires_at <= ?').run(now);
+  const count = res.changes || 0;
+  if (count > 0) {
+    console.log(`[History Cleanup] Deleted ${count} expired extraction history row(s) (90-day retention)`);
+  }
+  return count;
+}
 
+// Run cleanup immediately on server start and once daily (every 24h)
+cleanupExpiredHistory();
+setInterval(cleanupExpiredHistory, 24 * 60 * 60 * 1000);
+
+function saveExtractionHistory(email, extractedCode, language = 'auto', customName = null) {
+  if (!email || !extractedCode || typeof extractedCode !== 'string') return null;
+  const now = Date.now();
+  const expiresAt = now + NINETY_DAYS_MS;
+  const name = (customName && customName.trim()) ? customName.trim() : generateDefaultHistoryName(language, now);
+
+  const info = db.prepare(`
+    INSERT INTO extraction_history (user_email, custom_name, extracted_code, language, created_at, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(email, name, extractedCode, language || 'auto', now, expiresAt);
+
+  // FIFO: Enforce 100-entry limit per user
   db.prepare(`
     DELETE FROM extraction_history
     WHERE user_email = ? AND id NOT IN (
       SELECT id FROM extraction_history
       WHERE user_email = ?
       ORDER BY created_at DESC
-      LIMIT 10
+      LIMIT ?
     )
-  `).run(email, email);
+  `).run(email, email, MAX_HISTORY_PER_USER);
+
+  return {
+    id: info.lastInsertRowid,
+    user_email: email,
+    custom_name: name,
+    extracted_code: extractedCode,
+    language: language || 'auto',
+    created_at: now,
+    expires_at: expiresAt,
+  };
 }
 
 function getExtractionHistory(email) {
-  cleanOldHistory();
+  cleanupExpiredHistory();
   const rows = db.prepare(`
-    SELECT id, code_text, lang, created_at
+    SELECT id, custom_name, extracted_code, language, created_at, expires_at
     FROM extraction_history
     WHERE user_email = ?
     ORDER BY created_at DESC
-    LIMIT 10
-  `).all(email);
+    LIMIT ?
+  `).all(email, MAX_HISTORY_PER_USER);
 
+  const now = Date.now();
   return rows.map(r => ({
     id: r.id,
-    codeText: r.code_text,
-    lang: r.lang,
+    customName: r.custom_name,
+    extractedCode: r.extracted_code,
+    language: r.language,
     createdAt: r.created_at,
+    expiresAt: r.expires_at,
+    expiresInDays: Math.max(0, Math.ceil((r.expires_at - now) / (24 * 60 * 60 * 1000))),
   }));
 }
 
@@ -374,33 +463,6 @@ function authenticate(req, _res, next) {
 app.get('/api/anon/status', (req, res) => {
   const ip = getClientIp(req);
   res.json(getAnonUsage(ip));
-});
-
-/* ─── GET /api/history ───────────────────────────────────────────────────── */
-app.get('/api/history', authenticate, (req, res) => {
-  if (!req.user)
-    return res.status(401).json({ error: 'Authentication required.' });
-  const history = getExtractionHistory(req.user.email);
-  res.json({ history });
-});
-
-/* ─── POST /api/history/save ─────────────────────────────────────────────── */
-app.post('/api/history/save', authenticate, (req, res) => {
-  if (!req.user)
-    return res.status(401).json({ error: 'Authentication required.' });
-  const { codeText, lang } = req.body || {};
-  if (!codeText)
-    return res.status(400).json({ error: 'Missing codeText.' });
-  saveExtractionHistory(req.user.email, codeText, lang);
-  res.json({ status: 'ok', history: getExtractionHistory(req.user.email) });
-});
-
-/* ─── DELETE /api/history/:id ────────────────────────────────────────────── */
-app.delete('/api/history/:id', authenticate, (req, res) => {
-  if (!req.user)
-    return res.status(401).json({ error: 'Authentication required.' });
-  db.prepare('DELETE FROM extraction_history WHERE id = ? AND user_email = ?').run(req.params.id, req.user.email);
-  res.json({ status: 'ok' });
 });
 
 /* ─── POST /api/feedback ─────────────────────────────────────────────────── */
@@ -578,6 +640,98 @@ app.get('/api/auth/me', authenticate, (req, res) => {
   });
 });
 
+/* ─── GET /api/history ───────────────────────────────────────────────────── */
+app.get('/api/history', authenticate, (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required to view extraction history.' });
+  }
+  const history = getExtractionHistory(req.user.email);
+  res.json({ ok: true, history });
+});
+
+/* ─── POST /api/history/save ─────────────────────────────────────────────── */
+app.post('/api/history/save', authenticate, (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required to save extraction history.' });
+  }
+  const { codeText, extractedCode, lang, language, customName, historyId } = req.body || {};
+  const code = extractedCode || codeText;
+  const languageName = language || lang || 'auto';
+
+  // If historyId is provided, update the existing entry's language and name
+  if (historyId) {
+    const existing = db.prepare('SELECT * FROM extraction_history WHERE id = ? AND user_email = ?').get(historyId, req.user.email);
+    if (existing) {
+      const newName = customName || (existing.custom_name && !existing.custom_name.startsWith('Code ·')
+        ? existing.custom_name
+        : generateDefaultHistoryName(languageName, existing.created_at));
+      db.prepare(`
+        UPDATE extraction_history
+        SET language = ?, custom_name = ?
+        WHERE id = ? AND user_email = ?
+      `).run(languageName, newName, historyId, req.user.email);
+      return res.json({ ok: true, id: historyId, customName: newName, language: languageName });
+    }
+  }
+
+  if (!code) {
+    return res.status(400).json({ error: 'Extracted code text is required.' });
+  }
+
+  const entry = saveExtractionHistory(req.user.email, code, languageName, customName);
+  res.json({ ok: true, entry });
+});
+
+/* ─── PUT /api/history/:id ───────────────────────────────────────────────── */
+app.put('/api/history/:id', authenticate, (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+  const id = parseInt(req.params.id, 10);
+  const { customName } = req.body || {};
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid history ID.' });
+  }
+  if (!customName || !customName.trim()) {
+    return res.status(400).json({ error: 'Custom name cannot be empty.' });
+  }
+
+  const updatedName = customName.trim();
+  const info = db.prepare(`
+    UPDATE extraction_history
+    SET custom_name = ?
+    WHERE id = ? AND user_email = ?
+  `).run(updatedName, id, req.user.email);
+
+  if (info.changes === 0) {
+    return res.status(404).json({ error: 'History entry not found or permission denied.' });
+  }
+
+  res.json({ ok: true, id, customName: updatedName });
+});
+
+/* ─── DELETE /api/history/:id ────────────────────────────────────────────── */
+app.delete('/api/history/:id', authenticate, (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+  const id = parseInt(req.params.id, 10);
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ error: 'Invalid history ID.' });
+  }
+
+  const info = db.prepare(`
+    DELETE FROM extraction_history
+    WHERE id = ? AND user_email = ?
+  `).run(id, req.user.email);
+
+  if (info.changes === 0) {
+    return res.status(404).json({ error: 'History entry not found or permission denied.' });
+  }
+
+  res.json({ ok: true, id });
+});
+
 /* ─── Auth error classifier ──────────────────────────────────────────────── */
 function classifyGeminiError(status, data) {
   const msg    = data?.error?.message || '';
@@ -749,15 +903,16 @@ app.post('/api/extract', authenticate, async (req, res) => {
               saveUser(user);
               remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
             }
-            saveExtractionHistory(req.user.email, text, 'auto');
+            const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
+            console.log(`[CodeSnapper] ✓ ${endpoint}/${model} — ${text.length} chars (saved to history id: ${historyEntry?.id})`);
+            return res.json({ result: text, model, endpoint, remaining, historyEntry });
           } else {
             // Anonymous IP tracking in SQLite
             const newAnon = incAnonUsage(clientIp);
             remaining = newAnon.remaining;
+            console.log(`[CodeSnapper] ✓ ${endpoint}/${model} — ${text.length} chars (remaining: ${remaining})`);
+            return res.json({ result: text, model, endpoint, remaining });
           }
-
-          console.log(`[CodeSnapper] ✓ ${endpoint}/${model} — ${text.length} chars (remaining: ${remaining})`);
-          return res.json({ result: text, model, endpoint, remaining });
         }
 
         const err = classifyGeminiError(gemRes.status, data);
