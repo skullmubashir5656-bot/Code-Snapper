@@ -244,14 +244,24 @@ async function getGeminiToken() {
     throw err;
   }
 
-  const isBearer = _cachedToken.startsWith('ya29.');
-  const format = _cachedToken.startsWith('AQ.') ? 'AQ.'
-               : _cachedToken.startsWith('AIza') ? 'AIza'
-               : _cachedToken.startsWith('ya29.') ? 'OAuth (ya29)'
+  const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+  let tokenToUse = _cachedToken;
+  let isBearer = _cachedToken.startsWith('ya29.');
+
+  // Google Generative Language Developer API restricts service account OAuth tokens (ya29.)
+  // When an Authorization Key (AQ.) or API key (AIza) is available, use it directly via ?key= for 0ms overhead
+  if (isBearer && staticKey && staticKey !== 'your_gemini_api_key_here') {
+    tokenToUse = staticKey;
+    isBearer = false;
+  }
+
+  const format = tokenToUse.startsWith('AQ.') ? 'AQ.'
+               : tokenToUse.startsWith('AIza') ? 'AIza'
+               : tokenToUse.startsWith('ya29.') ? 'OAuth (ya29)'
                : 'Standard';
 
   return {
-    token: _cachedToken,
+    token: tokenToUse,
     mode: _isServiceAccountActive ? 'service-account' : 'api-key',
     isBearer,
     format,
