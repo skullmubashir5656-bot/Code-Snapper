@@ -199,6 +199,7 @@ const els = {
   errorModalClose:  $('error-modal-close'),
   errorModalCancel: $('error-modal-cancel'),
   errorRetryBtn:    $('error-retry-btn'),
+  errorReportBtn:   $('error-report-btn'),
 
   // feedback modal
   feedbackModal:        $('feedback-modal'),
@@ -862,10 +863,139 @@ function closeModal(el) {
   document.body.style.touchAction = '';
 }
 
+/* ═══════════════════════════════════════════════
+   ERROR SANITIZATION (Friendly & Non-Technical)
+═══════════════════════════════════════════════ */
+function formatErrorMessage(err) {
+  if (!err) return 'Something went wrong. Please try again.';
+
+  let msg = '';
+  if (typeof err === 'string') {
+    msg = err;
+  } else if (err && typeof err.message === 'string') {
+    msg = err.message;
+  } else {
+    return 'An unexpected error occurred. Please try again or report the issue.';
+  }
+
+  // Preserve daily quota messages cleanly
+  if (msg.startsWith('DAILY_LIMIT:')) {
+    return msg.replace('DAILY_LIMIT:', '').trim();
+  }
+  if (msg.includes('daily quota of 50') || msg.includes('free extractions without an account')) {
+    return msg;
+  }
+  if (msg.includes('No source code detected') || msg.includes('No code detected')) {
+    return 'No source code detected in this screenshot. Please crop closely around the code or try another image.';
+  }
+  if (msg.includes('Please upload valid image files')) {
+    return msg;
+  }
+
+  const lower = msg.toLowerCase();
+
+  // Network / server connection failures
+  if (
+    lower.includes('failed to fetch') ||
+    lower.includes('networkerror') ||
+    lower.includes('econnrefused') ||
+    lower.includes('econnreset') ||
+    lower.includes('cannot reach') ||
+    lower.includes('pnpm') ||
+    lower.includes('offline')
+  ) {
+    return 'Unable to connect to the service. Please check your internet connection and try again.';
+  }
+
+  // Rate limits / high traffic
+  if (
+    lower.includes('rate_limit') ||
+    lower.includes('rate limit') ||
+    lower.includes('high traffic') ||
+    lower.includes('high demand') ||
+    lower.includes('too many requests') ||
+    lower.includes('429')
+  ) {
+    return 'Our service is experiencing high demand right now. Please wait a few seconds and try again.';
+  }
+
+  // Timeout errors
+  if (
+    lower.includes('timeout') ||
+    lower.includes('timed out') ||
+    lower.includes('took longer than expected') ||
+    lower.includes('abort') ||
+    lower.includes('504')
+  ) {
+    return 'Extraction took longer than expected. Please try a tighter crop or check your connection.';
+  }
+
+  // Safety / filter blocks
+  if (
+    lower.includes('safety') ||
+    lower.includes('blocked by') ||
+    lower.includes('content filter')
+  ) {
+    return 'This image could not be processed. Please crop closely around the code and try again.';
+  }
+
+  // Expired credentials / server internal errors
+  if (
+    lower.includes('service credentials may have expired') ||
+    lower.includes('credentials may have expired') ||
+    lower.includes('credentials have expired') ||
+    lower.includes('server_key_error') ||
+    lower.includes('invalid_api_key') ||
+    lower.includes('something went wrong on our end')
+  ) {
+    return 'Something went wrong on our end. Please try again shortly.';
+  }
+
+  // Provider names, API terms, models, credentials, internal errors
+  if (
+    lower.includes('gemini') ||
+    lower.includes('google') ||
+    lower.includes('api') ||
+    lower.includes('model') ||
+    lower.includes('credential') ||
+    lower.includes('token') ||
+    lower.includes('auth') ||
+    lower.includes('server_key_error') ||
+    lower.includes('server_config_error') ||
+    lower.includes('all_models_failed') ||
+    lower.includes('502') ||
+    lower.includes('500') ||
+    lower.includes('503')
+  ) {
+    return 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.';
+  }
+
+  // Catch raw stack traces, JS exceptions, or object dumps
+  if (
+    lower.includes('typeerror') ||
+    lower.includes('syntaxerror') ||
+    lower.includes('referenceerror') ||
+    lower.includes('[object') ||
+    lower.includes('undefined') ||
+    lower.includes('null') ||
+    lower.includes('stack') ||
+    lower.includes('at ') ||
+    lower.includes('{') ||
+    lower.includes('}')
+  ) {
+    return 'An unexpected error occurred. Please try again or report the issue.';
+  }
+
+  return msg;
+}
+
 function showError(msg, title = 'Extraction failed') {
   const titleEl = document.getElementById('error-modal-title');
   if (titleEl) titleEl.textContent = title;
-  els.errorModalMsg.textContent = msg || 'An unexpected error occurred.';
+  const friendlyMsg = formatErrorMessage(msg);
+  if (els.errorModalMsg) {
+    els.errorModalMsg.textContent = friendlyMsg;
+  }
   openModal(els.errorModal);
 }
 
@@ -1757,18 +1887,24 @@ async function callGemini(dataURL) {
       throw new Error('ANON_LIMIT_REACHED');
     }
     if (resp.status === 429 || code === 'RATE_LIMIT') {
-      throw new Error('RATE_LIMIT');
+      throw new Error('Our service is experiencing high demand right now. Please wait a few seconds and try again.');
     }
     if (resp.status === 401 || code === 'INVALID_API_KEY') {
-      throw new Error('SERVER_KEY_ERROR');
+      throw new Error('Something went wrong on our end. Please try again shortly.');
+    }
+    if (resp.status === 504 || code === 'IMAGE_TIMEOUT') {
+      throw new Error('Extraction took longer than expected. Please try a tighter crop or check your connection.');
+    }
+    if (resp.status === 502 || code === 'ALL_MODELS_FAILED') {
+      throw new Error('Extraction failed — our service is temporarily unavailable. Please try again in a moment.');
     }
     if (resp.status === 500 || code === 'SERVER_CONFIG_ERROR') {
-      throw new Error('SERVER_CONFIG_ERROR');
+      throw new Error('Something went wrong on our end. Please try again shortly.');
     }
     if (code === 'SAFETY_BLOCK') {
-      throw new Error('The image was blocked by content filters. Try cropping to just the code area.');
+      throw new Error('This image could not be processed. Please crop closely around the code and try again.');
     }
-    throw new Error(msg || `Extraction failed (${resp.status}). Please try again.`);
+    throw new Error(formatErrorMessage(msg || 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.'));
   }
 
   // Update remaining count from server response (for signed-in users)
@@ -1886,8 +2022,8 @@ async function runExtraction(croppedDataURL) {
     els.procStatusText.textContent = 'Preparing & encoding image…';
     setStep(1, true); setStep(2);
 
-    // Step 2: server-side Gemini call with active status updates
-    els.procStatusText.textContent = 'Analyzing image with Gemini Vision AI…';
+    // Step 2: server-side extraction call with active status updates
+    els.procStatusText.textContent = 'Transcribing code with Vision AI…';
 
     const statusUpdates = [
       'Extracting code layout & characters…',
@@ -1916,18 +2052,15 @@ async function runExtraction(croppedDataURL) {
         return;
       }
       if (err.message === 'RATE_LIMIT') {
-        throw new Error('Gemini AI is experiencing temporary high traffic. Please wait a few seconds and try again.');
+        throw new Error('Our service is experiencing high demand right now. Please wait a few seconds and try again.');
       }
-      if (err.message === 'SERVER_CONFIG_ERROR') {
-        throw new Error('The server is not ready yet. Please contact the site administrator.');
-      }
-      if (err.message === 'SERVER_KEY_ERROR') {
-        throw new Error('The server could not reach Gemini — the service credentials may have expired. Please try again shortly or contact support.');
+      if (err.message === 'SERVER_CONFIG_ERROR' || err.message === 'SERVER_KEY_ERROR') {
+        throw new Error('Something went wrong on our end. Please try again shortly.');
       }
       if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError') {
-        throw new Error('Cannot reach the CodeSnapper server. Make sure the server is running (pnpm start) and try again.');
+        throw new Error('Unable to connect to the service. Please check your internet connection and try again.');
       }
-      throw err;
+      throw new Error(formatErrorMessage(err));
     } finally {
       if (statusTicker) clearInterval(statusTicker);
     }
@@ -1972,7 +2105,7 @@ async function runExtraction(croppedDataURL) {
   } catch (err) {
     if (statusTicker) clearInterval(statusTicker);
     showPanel('crop-select');
-    const msg = err.message || 'Extraction failed.';
+    const msg = formatErrorMessage(err);
     showError(msg);
   }
 }
@@ -2086,8 +2219,8 @@ async function runBatchExtraction() {
       // 1. Instant AI Auto Crop
       const croppedDataURL = autoCropImage(item.img) || item.dataURL;
       setStep(1, true); setStep(2);
-      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing with Gemini Vision…';
-      els.procStatusText.textContent = `Processing image ${num} of ${total} · Gemini Vision AI`;
+      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing source code…';
+      els.procStatusText.textContent = `Processing image ${num} of ${total} · Vision AI`;
 
       // 2. Call Gemini API with automatic 1-time retry after 3s wait on failure
       let raw;
@@ -2101,8 +2234,8 @@ async function runBatchExtraction() {
         if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Temporary issue — retrying in 3s…';
         els.procStatusText.textContent = `Retrying image ${num} of ${total} after 3s…`;
         await delay(3000);
-        if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing with Gemini Vision (Retry)…';
-        els.procStatusText.textContent = `Processing image ${num} of ${total} · Gemini Vision AI (Retry)`;
+        if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing source code (Retry)…';
+        els.procStatusText.textContent = `Processing image ${num} of ${total} · Vision AI (Retry)`;
         raw = await callGemini(croppedDataURL);
       }
 
@@ -2174,7 +2307,7 @@ async function runBatchExtraction() {
         dataURL: item.dataURL,
         croppedDataURL: item.dataURL,
         success: false,
-        error: err.message || 'Extraction failed for this image.',
+        error: formatErrorMessage(err) || 'Extraction failed for this image.',
         code: '',
         html: '',
         lang: 'plaintext',
@@ -2922,6 +3055,12 @@ function bindEvents() {
     closeModal(els.errorModal);
     if (state.croppedDataURL) runExtraction(state.croppedDataURL);
   });
+  if (els.errorReportBtn) {
+    els.errorReportBtn.addEventListener('click', () => {
+      closeModal(els.errorModal);
+      openFeedbackModal();
+    });
+  }
 
   /* ── Feedback modal ── */
   if (els.reportIssueResultBtn) {
@@ -3124,5 +3263,24 @@ function init() {
   }
   console.log('%c CodeSnapper loaded ❖', 'color:#a78bfa;font-weight:bold;font-size:16px');
 }
+
+/* ═══════════════════════════════════════════════
+   GLOBAL UNHANDLED ERROR CATCH-ALL
+═══════════════════════════════════════════════ */
+window.addEventListener('error', (event) => {
+  console.error('[CodeSnapper] Unhandled error:', event.error || event.message);
+  if (state.panel === 'processing') {
+    showPanel(state.isBatch ? 'batch-preview' : 'crop-select');
+  }
+  showError('Something went wrong. Please try again.');
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[CodeSnapper] Unhandled rejection:', event.reason);
+  if (state.panel === 'processing') {
+    showPanel(state.isBatch ? 'batch-preview' : 'crop-select');
+  }
+  showError('Something went wrong. Please try again.');
+});
 
 document.addEventListener('DOMContentLoaded', init);

@@ -581,7 +581,7 @@ app.post('/api/feedback', authenticate, (req, res) => {
     res.json({ ok: true, id: result.lastInsertRowid });
   } catch (err) {
     console.error('[Feedback] Error saving feedback:', err.message);
-    res.status(500).json({ error: 'Failed to save feedback.' });
+    res.status(500).json({ error: 'Failed to submit report. Please try again.' });
   }
 });
 
@@ -713,11 +713,11 @@ app.post('/api/auth/login', async (req, res) => {
 /* ─── GET /api/auth/me ───────────────────────────────────────────────────── */
 app.get('/api/auth/me', authenticate, (req, res) => {
   if (!req.user)
-    return res.status(401).json({ error: 'Not authenticated.' });
+    return res.status(401).json({ error: 'Please sign in to continue.' });
 
   const user = getUser(req.user.email);
   if (!user)
-    return res.status(404).json({ error: 'Account not found.' });
+    return res.status(404).json({ error: 'Account not found. Please sign in again.' });
 
   refreshWindow(user);
   saveUser(user);
@@ -734,12 +734,12 @@ app.get('/api/auth/me', authenticate, (req, res) => {
 /* ─── GET /api/user/usage ─────────────────────────────────────────────────── */
 app.get('/api/user/usage', authenticate, (req, res) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required.' });
+    return res.status(401).json({ error: 'Please sign in to view your usage.' });
   }
 
   const user = getUser(req.user.email);
   if (!user) {
-    return res.status(404).json({ error: 'Account not found.' });
+    return res.status(404).json({ error: 'Account not found. Please sign in again.' });
   }
 
   refreshWindow(user);
@@ -761,7 +761,7 @@ app.get('/api/user/usage', authenticate, (req, res) => {
 /* ─── GET /api/history ───────────────────────────────────────────────────── */
 app.get('/api/history', authenticate, (req, res) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required to view extraction history.' });
+    return res.status(401).json({ error: 'Please sign in to view your extraction history.' });
   }
   const history = getExtractionHistory(req.user.email);
   res.json({ ok: true, history });
@@ -770,7 +770,7 @@ app.get('/api/history', authenticate, (req, res) => {
 /* ─── POST /api/history/save ─────────────────────────────────────────────── */
 app.post('/api/history/save', authenticate, (req, res) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required to save extraction history.' });
+    return res.status(401).json({ error: 'Please sign in to save your extraction history.' });
   }
   const { codeText, extractedCode, lang, language, customName, historyId } = req.body || {};
   const code = extractedCode || codeText;
@@ -793,7 +793,7 @@ app.post('/api/history/save', authenticate, (req, res) => {
   }
 
   if (!code) {
-    return res.status(400).json({ error: 'Extracted code text is required.' });
+    return res.status(400).json({ error: 'No code content found to save.' });
   }
 
   const entry = saveExtractionHistory(req.user.email, code, languageName, customName);
@@ -803,15 +803,15 @@ app.post('/api/history/save', authenticate, (req, res) => {
 /* ─── PUT /api/history/:id ───────────────────────────────────────────────── */
 app.put('/api/history/:id', authenticate, (req, res) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required.' });
+    return res.status(401).json({ error: 'Please sign in to manage your extraction history.' });
   }
   const id = parseInt(req.params.id, 10);
   const { customName } = req.body || {};
   if (!id || isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid history ID.' });
+    return res.status(400).json({ error: 'Invalid extraction item.' });
   }
   if (!customName || !customName.trim()) {
-    return res.status(400).json({ error: 'Custom name cannot be empty.' });
+    return res.status(400).json({ error: 'Name cannot be empty.' });
   }
 
   const updatedName = customName.trim();
@@ -822,7 +822,7 @@ app.put('/api/history/:id', authenticate, (req, res) => {
   `).run(updatedName, id, req.user.email);
 
   if (info.changes === 0) {
-    return res.status(404).json({ error: 'History entry not found or permission denied.' });
+    return res.status(404).json({ error: 'Extraction not found or already removed.' });
   }
 
   res.json({ ok: true, id, customName: updatedName });
@@ -831,11 +831,11 @@ app.put('/api/history/:id', authenticate, (req, res) => {
 /* ─── DELETE /api/history/:id ────────────────────────────────────────────── */
 app.delete('/api/history/:id', authenticate, (req, res) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required.' });
+    return res.status(401).json({ error: 'Please sign in to manage your extraction history.' });
   }
   const id = parseInt(req.params.id, 10);
   if (!id || isNaN(id)) {
-    return res.status(400).json({ error: 'Invalid history ID.' });
+    return res.status(400).json({ error: 'Invalid extraction item.' });
   }
 
   const info = db.prepare(`
@@ -844,7 +844,7 @@ app.delete('/api/history/:id', authenticate, (req, res) => {
   `).run(id, req.user.email);
 
   if (info.changes === 0) {
-    return res.status(404).json({ error: 'History entry not found or permission denied.' });
+    return res.status(404).json({ error: 'Extraction not found or already removed.' });
   }
 
   res.json({ ok: true, id });
@@ -858,19 +858,19 @@ function classifyGeminiError(status, data) {
 
   if (status === 401 || reason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED')
     return { ...detail, type: 'AUTH_TOKEN_UNSUPPORTED',
-      friendly: 'Your AQ. key was rejected (unsupported token type). AQ. tokens expire after ~1 hour — generate a fresh one, or use an AIza API key from https://aistudio.google.com/app/apikey' };
+      friendly: 'Something went wrong on our end. Please try again shortly.' };
   if (status === 401 || msg.toLowerCase().includes('api key not valid'))
     return { ...detail, type: 'INVALID_KEY',
-      friendly: 'Authentication failed. Check GEMINI_API_KEY in .env.' };
+      friendly: 'Something went wrong on our end. Please try again shortly.' };
   if (status === 403)
     return { ...detail, type: 'ACCESS_DENIED',
-      friendly: 'Access denied. Ensure the Generative Language API is enabled.' };
+      friendly: 'Something went wrong on our end. Please try again shortly.' };
   if (status === 429)
     return { ...detail, type: 'RATE_LIMIT',
-      friendly: 'Rate limit reached. Please wait a moment and try again.' };
+      friendly: 'Our service is experiencing high demand right now. Please wait a few seconds and try again.' };
   if (status === 404 || msg.includes('not found') || msg.includes('not support'))
-    return { ...detail, type: 'MODEL_NOT_FOUND', friendly: 'Model not available.' };
-  return { ...detail, type: 'API_ERROR', friendly: msg || `Gemini API error (HTTP ${status})` };
+    return { ...detail, type: 'MODEL_NOT_FOUND', friendly: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.' };
+  return { ...detail, type: 'API_ERROR', friendly: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.' };
 }
 
 const MODEL_TIMEOUT_MS = 15000; // 15 seconds timeout per model attempt
@@ -926,11 +926,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
     console.error('[CodeSnapper] ✗ Credential error:', e.message);
     if (code === 'TOKEN_EXPIRED') {
       return res.status(503).json({
-        error: 'The server\'s API credentials have expired. Please try again later.',
+        error: 'Something went wrong on our end. Please try again shortly.',
         code,
       });
     }
-    return res.status(500).json({ error: 'Server not configured. Please contact the administrator.', code });
+    return res.status(500).json({ error: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.', code });
   }
 
   let { token, mode, isBearer } = cred;
@@ -967,9 +967,9 @@ app.post('/api/extract', authenticate, async (req, res) => {
   /* ── 3. Validate request ── */
   const { imageData, mimeType } = req.body;
   if (!imageData || typeof imageData !== 'string')
-    return res.status(400).json({ error: 'Missing or invalid imageData.', code: 'BAD_REQUEST' });
+    return res.status(400).json({ error: 'Please upload a valid image file and try again.', code: 'BAD_REQUEST' });
   if (!mimeType || !mimeType.startsWith('image/'))
-    return res.status(400).json({ error: 'Missing or invalid mimeType.', code: 'BAD_REQUEST' });
+    return res.status(400).json({ error: 'Please upload a valid image file (PNG, JPG, WEBP, GIF).', code: 'BAD_REQUEST' });
 
   const userLabel = req.user ? req.user.email : `anonymous (${clientIp})`;
   console.log(`\n[CodeSnapper] Extract ← ${userLabel} [cred: ${mode}]`);
@@ -1024,7 +1024,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
             : data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
           if (!text && data?.candidates?.[0]?.finishReason === 'SAFETY') {
-            return res.status(422).json({ error: 'Image blocked by safety filters. Try a tighter crop.', code: 'SAFETY_BLOCK' });
+            return res.status(422).json({ error: 'This image could not be processed. Please crop closely around the code and try again.', code: 'SAFETY_BLOCK' });
           }
           if (!text) { continue; }
 
@@ -1134,7 +1134,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   if (totalTimeoutExceeded) {
     console.error(`[CodeSnapper] ✗ Image extraction timed out: exceeded total timeout of 20s (${Date.now() - imageStartTime}ms) across attempted models: ${GEMINI_MODELS.join(', ')}`);
     return res.status(504).json({
-      error: 'Image extraction timed out (exceeded 20s limit). Please try a tighter crop or check your network.',
+      error: 'Extraction took longer than expected. Please try a tighter crop or check your connection.',
       code: 'IMAGE_TIMEOUT',
     });
   }
@@ -1143,19 +1143,19 @@ app.post('/api/extract', authenticate, async (req, res) => {
     console.error('\n[CodeSnapper] ══ AUTH FAILURE ═══════════════════');
     console.error(`  ${hardAuthError.type}: ${hardAuthError.msg}`);
     console.error('  Check your environment variables.\n');
-    return res.status(401).json({ error: 'The server could not authenticate with Gemini. Please check your credentials.', code: 'INVALID_API_KEY' });
+    return res.status(401).json({ error: 'Something went wrong on our end. Please try again shortly.', code: 'INVALID_API_KEY' });
   }
 
   if (rateLimitError) {
     return res.status(429).json({
-      error: 'Gemini AI is currently experiencing high traffic. Please wait a few seconds and try again.',
+      error: 'Our service is experiencing high demand right now. Please wait a few seconds and try again.',
       code:  'RATE_LIMIT',
     });
   }
 
   console.error(`[CodeSnapper] ✗ All models failed for image! Attempted models: ${GEMINI_MODELS.join(' → ')} | Total elapsed: ${Date.now() - imageStartTime}ms`);
   return res.status(502).json({
-    error: 'Could not reach Gemini API after trying all models. Check your internet connection.',
+    error: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.',
     code:  'ALL_MODELS_FAILED',
   });
 });
