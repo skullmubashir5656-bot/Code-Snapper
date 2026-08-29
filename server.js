@@ -51,12 +51,15 @@ const WINDOW_MS   = 24 * 60 * 60 * 1000;  // 24-hour rolling window
 const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GEMINI_OPENAI_URL  = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
+// Verified ultra-low-latency models in order of response speed
 const GEMINI_MODELS = [
-  'gemini-3.5-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-3.6-flash',
-  'gemini-flash-latest',
+  'gemini-3.5-flash-lite', // ~688ms
+  'gemini-3.5-flash',      // ~1133ms
+  'gemini-3.6-flash',      // ~2004ms
 ];
+
+const PER_MODEL_TIMEOUT_MS       = 5000;  // 5 seconds max per model attempt
+const MAX_IMAGE_TOTAL_TIMEOUT_MS = 15000; // 15 seconds max per image across ALL models combined
 
 const EXTRACTION_PROMPT = `You are CodeSnapper — a precision code extraction engine. Your ONLY task is to transcribe the source code visible in this image.
 
@@ -836,7 +839,7 @@ function classifyGeminiError(status, data) {
 const MODEL_TIMEOUT_MS = 15000; // 15 seconds timeout per model attempt
 
 /* ─── Gemini strategies ──────────────────────────────────────────────────── */
-async function tryOpenAIEndpoint(model, token, mimeType, imageData) {
+async function tryOpenAIEndpoint(model, token, mimeType, imageData, timeoutMs = PER_MODEL_TIMEOUT_MS) {
   const body = {
     model,
     messages: [{ role: 'user', content: [
@@ -850,13 +853,13 @@ async function tryOpenAIEndpoint(model, token, mimeType, imageData) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
     body:   JSON.stringify(body),
-    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await res.json().catch(() => ({}));
   return { res, data, endpoint: 'openai-compat' };
 }
 
-async function tryNativeEndpoint(model, token, isBearer, requestBody) {
+async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs = PER_MODEL_TIMEOUT_MS) {
   const url = isBearer
     ? `${GEMINI_NATIVE_BASE}/${model}:generateContent`
     : `${GEMINI_NATIVE_BASE}/${model}:generateContent?key=${token}`;
@@ -867,7 +870,7 @@ async function tryNativeEndpoint(model, token, isBearer, requestBody) {
     method: 'POST',
     headers,
     body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await res.json().catch(() => ({}));
   return { res, data, endpoint: 'native' };
@@ -875,6 +878,7 @@ async function tryNativeEndpoint(model, token, isBearer, requestBody) {
 
 /* ─── POST /api/extract ──────────────────────────────────────────────────── */
 app.post('/api/extract', authenticate, async (req, res) => {
+  const imageStartTime = Date.now();
 
   /* ── 1. Get a fresh Gemini token (auto-refreshed for service accounts) ── */
   let cred;
@@ -952,14 +956,30 @@ app.post('/api/extract', authenticate, async (req, res) => {
   const strategies = isBearer ? ['native', 'openai-compat'] : ['native'];
   let hardAuthError = null;
   let rateLimitError = null;
+  let totalTimeoutExceeded = false;
 
   for (const model of GEMINI_MODELS) {
+    const elapsedBeforeModel = Date.now() - imageStartTime;
+    if (elapsedBeforeModel >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
+      console.warn(`[CodeSnapper] ⏱ Image reached 15s total limit (${elapsedBeforeModel}ms). Skipping further model attempts.`);
+      totalTimeoutExceeded = true;
+      break;
+    }
+
+    const currentAttemptTimeoutMs = Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - elapsedBeforeModel);
+
     for (const strategy of strategies) {
+      const elapsedBeforeAttempt = Date.now() - imageStartTime;
+      if (elapsedBeforeAttempt >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
+        totalTimeoutExceeded = true;
+        break;
+      }
+
       try {
-        console.log(`[CodeSnapper]   ${strategy}/${model}…`);
+        console.log(`[CodeSnapper]   ${strategy}/${model} (timeout: ${currentAttemptTimeoutMs}ms)…`);
         const { res: gemRes, data, endpoint } = strategy === 'openai-compat'
-          ? await tryOpenAIEndpoint(model, token, mimeType, imageData)
-          : await tryNativeEndpoint(model, token, isBearer, nativeBody);
+          ? await tryOpenAIEndpoint(model, token, mimeType, imageData, currentAttemptTimeoutMs)
+          : await tryNativeEndpoint(model, token, isBearer, nativeBody, currentAttemptTimeoutMs);
 
         if (gemRes.ok) {
           const text = endpoint === 'openai-compat'
@@ -971,9 +991,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
           }
           if (!text) { continue; }
 
-          /* ── Record API success ── */
+          /* ── Record API success and timing ── */
+          const totalDurationMs = Date.now() - imageStartTime;
           _lastSuccessfulApiCall = new Date().toISOString();
           _totalSuccessfulCalls++;
+          console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}]`);
 
           /* ── Increment usage counter ── */
           let remaining = null;
@@ -986,14 +1008,12 @@ app.post('/api/extract', authenticate, async (req, res) => {
               remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
             }
             const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
-            console.log(`[CodeSnapper] ✓ ${endpoint}/${model} — ${text.length} chars (saved to history id: ${historyEntry?.id})`);
-            return res.json({ result: text, model, endpoint, remaining, historyEntry });
+            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs, historyEntry });
           } else {
             // Anonymous IP tracking in SQLite
             const newAnon = incAnonUsage(clientIp);
             remaining = newAnon.remaining;
-            console.log(`[CodeSnapper] ✓ ${endpoint}/${model} — ${text.length} chars (remaining: ${remaining})`);
-            return res.json({ result: text, model, endpoint, remaining });
+            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs });
           }
         }
 
@@ -1001,10 +1021,8 @@ app.post('/api/extract', authenticate, async (req, res) => {
         console.error(`[CodeSnapper] ✗ ${endpoint}/${model} [${err.type}] ${err.msg}`);
 
         if (err.type === 'RATE_LIMIT') {
-          console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model…`);
+          console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model immediately…`);
           rateLimitError = err;
-          // Short 500ms delay to allow burst quota to cool down before trying next model
-          await new Promise(r => setTimeout(r, 500));
           continue;
         }
 
@@ -1018,12 +1036,14 @@ app.post('/api/extract', authenticate, async (req, res) => {
             isBearer = false;
             _isServiceAccountActive = false;
             // Retry this model immediately with the static key
-            const fallbackRes = await tryNativeEndpoint(model, token, false, nativeBody);
+            const fallbackRes = await tryNativeEndpoint(model, token, false, nativeBody, Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - (Date.now() - imageStartTime)));
             if (fallbackRes.res.ok) {
               const text = fallbackRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
               if (text) {
+                const totalDurationMs = Date.now() - imageStartTime;
                 _lastSuccessfulApiCall = new Date().toISOString();
                 _totalSuccessfulCalls++;
+                console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [fallback native/${model}]`);
                 let remaining = null;
                 if (req.user) {
                   const user = getUser(req.user.email);
@@ -1034,13 +1054,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
                     remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
                   }
                   const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
-                  console.log(`[CodeSnapper] ✓ fallback native/${model} — ${text.length} chars (saved to history id: ${historyEntry?.id})`);
-                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, historyEntry });
+                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, historyEntry });
                 } else {
                   const newAnon = incAnonUsage(clientIp);
                   remaining = newAnon.remaining;
-                  console.log(`[CodeSnapper] ✓ fallback native/${model} — ${text.length} chars (remaining: ${remaining})`);
-                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining });
+                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs });
                 }
               }
             }
@@ -1065,21 +1083,29 @@ app.post('/api/extract', authenticate, async (req, res) => {
         }
 
       } catch (networkErr) {
+        const attemptDuration = Date.now() - imageStartTime;
         if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
-          console.warn(`[CodeSnapper] ⏱ Timeout (${MODEL_TIMEOUT_MS/1000}s) for ${strategy}/${model}, failing over to next model…`);
+          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) for ${strategy}/${model} after ${attemptDuration}ms. Failing over to next model immediately…`);
         } else {
-          console.error(`[CodeSnapper] ✗ Network (${strategy}/${model}):`, networkErr.message);
+          console.error(`[CodeSnapper] ✗ Network error on ${strategy}/${model}:`, networkErr.message);
         }
       }
     }
-    if (hardAuthError) break;
+    if (hardAuthError || totalTimeoutExceeded) break;
+  }
+
+  if (totalTimeoutExceeded) {
+    return res.status(504).json({
+      error: 'Image extraction timed out (exceeded 15s limit). Please try a tighter crop or check your network.',
+      code: 'IMAGE_TIMEOUT',
+    });
   }
 
   if (hardAuthError) {
     console.error('\n[CodeSnapper] ══ AUTH FAILURE ═══════════════════');
     console.error(`  ${hardAuthError.type}: ${hardAuthError.msg}`);
     console.error('  Check your environment variables.\n');
-    return res.status(401).json({ error: 'The server could not authenticate with Gemini. Please try again later.', code: 'INVALID_API_KEY' });
+    return res.status(401).json({ error: 'The server could not authenticate with Gemini. Please check your credentials.', code: 'INVALID_API_KEY' });
   }
 
   if (rateLimitError) {
@@ -1096,44 +1122,22 @@ app.post('/api/extract', authenticate, async (req, res) => {
 });
 
 /* ─── Health check endpoint (/health & /api/health) ───────────────────────── */
-function getHealthStatus() {
-  const tokenAgeMs = Date.now() - _tokenLoadedAt;
-  const tokenAgeMinutes = Math.floor(tokenAgeMs / 60000);
-  const nextRefreshInMinutes = Math.max(0, Math.ceil((TOKEN_REFRESH_INTERVAL_MS - tokenAgeMs) / 60000));
-  const rawCred = findServiceAccountRaw();
-  const credPrefix = _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none';
-  const envKey = (process.env.GEMINI_API_KEY || '').trim();
-  const envKeyPrefix = envKey ? `${envKey.slice(0, 10)}...` : null;
-
-  return {
-    status: 'ok',
-    auth: {
-      method: _isServiceAccountActive ? 'service-account' : 'api-key',
-      isServiceAccount: _isServiceAccountActive,
-      clientEmail: _serviceAccountEmail,
-      credentialPrefix: credPrefix,
-      configuredGeminiApiKeyPrefix: envKeyPrefix,
-      tokenAgeMinutes,
-      tokenLoadedAt: new Date(_tokenLoadedAt).toISOString(),
-      nextRefreshInMinutes: _isServiceAccountActive ? nextRefreshInMinutes : null,
-      autoRefreshActive: _isServiceAccountActive,
-      serviceAccountConfigured: !!rawCred,
-      rawConfiguredEnvVar: rawCred ? rawCred.key : (envKey ? 'GEMINI_API_KEY' : null),
-      lastAuthError: _lastAuthError,
-      lastSuccessfulApiCall: _lastSuccessfulApiCall,
-      totalSuccessfulCalls: _totalSuccessfulCalls,
-      warning: !_isServiceAccountActive && (credPrefix.startsWith('AQ.') || (envKeyPrefix && envKeyPrefix.startsWith('AQ.')))
-        ? 'Using AQ. authorization key from GEMINI_API_KEY. For automatic token refresh, ensure GOOGLE_SERVICE_ACCOUNT_JSON is set in Render environment.'
-        : null
-    },
-    models: GEMINI_MODELS,
-    serverTime: new Date().toISOString(),
-    stable: true
-  };
-}
-
 app.get(['/health', '/api/health'], (_req, res) => {
-  res.json(getHealthStatus());
+  const isAuthOk = !!_cachedToken && !_lastAuthError;
+  res.json({
+    auth: isAuthOk ? 'ok' : 'failed',
+    method: _isServiceAccountActive ? 'service-account' : (_cachedToken ? 'api-key' : 'none'),
+    lastSuccess: _lastSuccessfulApiCall,
+    totalSuccess: _totalSuccessfulCalls,
+    credentialPrefix: _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none',
+    serviceAccountEmail: _serviceAccountEmail,
+    models: GEMINI_MODELS,
+    perModelTimeoutMs: PER_MODEL_TIMEOUT_MS,
+    maxImageTotalTimeoutMs: MAX_IMAGE_TOTAL_TIMEOUT_MS,
+    serverTime: new Date().toISOString(),
+    status: isAuthOk ? 'ok' : 'error',
+    error: _lastAuthError
+  });
 });
 
 /* ─── SPA fallback ───────────────────────────────────────────────────────── */
@@ -1145,47 +1149,69 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
   console.log('║          CodeSnapper is starting           ║');
   console.log('╚════════════════════════════════════════════╝');
 
-  // 1. Explicitly initialize authentication on startup
-  console.log('[Auth] Initializing Gemini API credentials...');
-  try {
-    await refreshTokenIfNeeded(true);
-  } catch (err) {
-    console.error('[Auth] ✗ Startup authentication check failed:', err.message);
+  const rawCred = findServiceAccountRaw();
+  const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+
+  // Priority 3: If neither exists → crash immediately on startup
+  if (!rawCred && (!staticKey || staticKey === 'your_gemini_api_key_here')) {
+    console.error('\n❌ CRITICAL STARTUP ERROR:');
+    console.error('NO CREDENTIALS FOUND — set GEMINI_API_KEY or GOOGLE_SERVICE_ACCOUNT_JSON in environment');
+    console.error('Shutting down server immediately.\n');
+    process.exit(1);
   }
 
-  const rawCred = findServiceAccountRaw();
-  const credPrefix = _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none';
+  // Priority 1: If GOOGLE_SERVICE_ACCOUNT_JSON exists in environment → use google-auth-library to mint tokens
+  if (rawCred) {
+    console.log(`[Auth] Priority 1: Service Account detected in ${rawCred.key}. Minting token via google-auth-library...`);
+    try {
+      await refreshTokenIfNeeded(true);
+    } catch (err) {
+      console.error('[Auth] ✗ Service account initial token minting failed:', err.message);
+      if (!staticKey || staticKey === 'your_gemini_api_key_here') {
+        console.error('\n❌ CRITICAL ERROR: Service account authentication failed and no static GEMINI_API_KEY provided.');
+        console.error('NO CREDENTIALS FOUND — set GEMINI_API_KEY or GOOGLE_SERVICE_ACCOUNT_JSON in environment\n');
+        process.exit(1);
+      }
+    }
+  }
+
+  // Priority 2: If only GEMINI_API_KEY exists → use it as a static key via ?key= query param
+  if (!_isServiceAccountActive && staticKey && staticKey !== 'your_gemini_api_key_here') {
+    _cachedToken = staticKey;
+    _tokenLoadedAt = Date.now();
+    _isServiceAccountActive = false;
+    const prefix = staticKey.slice(0, 10);
+    console.log(`[Auth] Priority 2: Using static key from GEMINI_API_KEY (${prefix}…) via ?key= query param`);
+    console.warn(`[Auth] ⚠ WARNING: Using static GEMINI_API_KEY. It may expire hourly if using an authorization token.`);
+  }
 
   console.log('─────────────────────────────────────────────────────────────');
-  console.log(`[Auth] Active Method:     ${_isServiceAccountActive ? 'service-account (GoogleAuth)' : 'api-key (Static GEMINI_API_KEY)'}`);
-  console.log(`[Auth] Loaded Credential: ${credPrefix} (first 10 characters)`);
+  console.log(`[Auth] Status:            ${_cachedToken ? 'OK' : 'FAILED'}`);
+  console.log(`[Auth] Active Method:     ${_isServiceAccountActive ? 'service-account' : 'api-key'}`);
+  console.log(`[Auth] Loaded Credential: ${_cachedToken ? _cachedToken.slice(0, 10) + '...' : 'none'}`);
   if (_isServiceAccountActive) {
     console.log(`[Auth] Service Account:   ${_serviceAccountEmail}`);
     console.log(`[Auth] Auto-refresh:      ✓ ENABLED — token will refresh automatically every 45 minutes`);
-  } else {
-    console.log(`[Auth] Service Account:   ✗ NOT DETECTED (checked env: ${rawCred ? rawCred.key : 'none found'})`);
-    if (_cachedToken.startsWith('AQ.')) {
-      console.warn(`[Auth] ⚠ WARNING: Running with static AQ. token (${credPrefix}).`);
-      console.warn(`[Auth] ⚠ AQ. tokens expire hourly! Add GOOGLE_SERVICE_ACCOUNT_JSON for permanent auto-refresh.`);
-    }
   }
   console.log('─────────────────────────────────────────────────────────────');
 
-  // 2. Set up proactive background token refresh every 45 minutes
-  setInterval(async () => {
-    try {
-      if (_isServiceAccountActive || findServiceAccountRaw()) {
+  // Auto-refresh every 45 minutes for service accounts
+  if (_isServiceAccountActive || rawCred) {
+    setInterval(async () => {
+      try {
+        console.log(`[Auth] [${new Date().toISOString()}] Scheduled 45-minute background auto-refresh running…`);
         await refreshTokenIfNeeded(true);
+      } catch (err) {
+        console.error(`[Auth] [${new Date().toISOString()}] ✗ Scheduled 45-minute background refresh error:`, err.message);
       }
-    } catch (err) {
-      console.error('[Auth] Scheduled 45-minute background refresh error:', err.message);
-    }
-  }, TOKEN_REFRESH_INTERVAL_MS);
+    }, TOKEN_REFRESH_INTERVAL_MS);
+  }
 
   app.listen(PORT, () => {
     console.log(`  URL:      http://localhost:${PORT}`);
     console.log(`  Health:   http://localhost:${PORT}/health`);
     console.log(`  Models:   ${GEMINI_MODELS.join(' → ')}`);
+    console.log(`  Timeouts: ${PER_MODEL_TIMEOUT_MS/1000}s per model attempt | ${MAX_IMAGE_TOTAL_TIMEOUT_MS/1000}s max per image`);
     console.log(`  Auth:     JWT (30-day tokens, bcrypt passwords)`);
     console.log(`  Limits:   Anon=25 total  |  Signed-in=${AUTH_LIMIT}/24h rolling\n`);
   });

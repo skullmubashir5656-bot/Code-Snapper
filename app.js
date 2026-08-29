@@ -1346,13 +1346,26 @@ class AutoCropper {
 /** Fail-safe helper for silent Auto Crop */
 function autoCropImage(img) {
   if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+  let dummyCanvas = null;
+  let cropper = null;
   try {
-    const dummyCanvas = document.createElement('canvas');
-    const cropper = new AutoCropper(dummyCanvas, img);
-    return cropper.getCroppedDataURL();
+    dummyCanvas = document.createElement('canvas');
+    cropper = new AutoCropper(dummyCanvas, img);
+    const result = cropper.getCroppedDataURL();
+    return result;
   } catch (err) {
     console.warn('Auto crop detection fallback to full image:', err);
     return null;
+  } finally {
+    if (cropper && typeof cropper.destroy === 'function') {
+      try { cropper.destroy(); } catch (_) {}
+    }
+    if (dummyCanvas) {
+      dummyCanvas.width = 0;
+      dummyCanvas.height = 0;
+      dummyCanvas = null;
+    }
+    cropper = null;
   }
 }
 
@@ -2076,7 +2089,6 @@ async function runBatchExtraction() {
 
   els.batchProgressPct.textContent = '100%';
   els.batchProgressFill.style.width = '100%';
-  await delay(200);
 
   showBatchResults();
 }
