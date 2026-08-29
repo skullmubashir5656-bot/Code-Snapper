@@ -88,65 +88,143 @@ let _cachedToken = (process.env.GEMINI_API_KEY || '').trim();
 let _tokenLoadedAt = Date.now();
 let _authClient = null;
 let _isServiceAccountActive = false;
+let _serviceAccountEmail = null;
+let _lastAuthError = null;
+let _lastSuccessfulApiCall = null;
+let _totalSuccessfulCalls = 0;
 
 /**
- * Checks if the current token has exceeded the 45-minute window or was flagged for refresh,
- * and automatically mints/fetches a fresh token using service account or environment.
+ * Searches environment variables for service account credentials across all common keys.
+ */
+function findServiceAccountRaw() {
+  const candidateKeys = [
+    'GOOGLE_SERVICE_ACCOUNT_JSON',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GCP_SERVICE_ACCOUNT',
+    'SERVICE_ACCOUNT_JSON',
+    'GCP_KEY',
+    'GCP_SA_KEY',
+  ];
+  for (const key of candidateKeys) {
+    const val = process.env[key];
+    if (val && typeof val === 'string' && val.trim()) {
+      return { key, value: val.trim() };
+    }
+  }
+  return null;
+}
+
+/**
+ * Robustly parses service account credentials from raw strings, file paths, base64, or quoted strings.
+ */
+function parseServiceAccountJson(rawInput) {
+  if (!rawInput || typeof rawInput !== 'string') return null;
+  let str = rawInput.trim();
+
+  // 1. If pointing to a file path that exists on disk (e.g. Render Secret Files)
+  if (fs.existsSync(str)) {
+    try {
+      str = fs.readFileSync(str, 'utf8').trim();
+    } catch (err) {
+      throw new Error(`Failed to read credential file at "${rawInput}": ${err.message}`);
+    }
+  }
+
+  // 2. Strip wrapping single or double quotes if present
+  if ((str.startsWith("'") && str.endsWith("'")) || (str.startsWith('"') && str.endsWith('"'))) {
+    str = str.slice(1, -1).trim();
+  }
+
+  // 3. If base64 encoded (common on Render to avoid multi-line issues)
+  if (!str.startsWith('{')) {
+    try {
+      const decoded = Buffer.from(str, 'base64').toString('utf8').trim();
+      if (decoded.startsWith('{')) {
+        str = decoded;
+      }
+    } catch (_) {}
+  }
+
+  // 4. Parse JSON
+  let creds;
+  try {
+    creds = JSON.parse(str);
+  } catch (err) {
+    try {
+      const unescaped = str.replace(/\\"/g, '"');
+      creds = JSON.parse(unescaped);
+    } catch (err2) {
+      throw new Error(`Invalid JSON syntax in service account credential: ${err.message}`);
+    }
+  }
+
+  // 5. Validate essential fields
+  if (!creds.client_email || !creds.private_key) {
+    throw new Error(`Service account JSON missing required fields (client_email: ${!!creds.client_email}, private_key: ${!!creds.private_key})`);
+  }
+
+  // 6. Normalize private key newlines
+  if (typeof creds.private_key === 'string' && creds.private_key.includes('\\n')) {
+    creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+  }
+
+  return creds;
+}
+
+/**
+ * Checks token age and mints fresh token using GoogleAuth service account or GEMINI_API_KEY.
  */
 async function refreshTokenIfNeeded(force = false) {
   const ageMs = Date.now() - _tokenLoadedAt;
-  if (!force && _cachedToken && ageMs < TOKEN_REFRESH_INTERVAL_MS) {
-    return;
+  if (!force && _cachedToken && ageMs < TOKEN_REFRESH_INTERVAL_MS && _isServiceAccountActive) {
+    return _cachedToken;
   }
 
-  const reason = force ? 'Emergency auth retry' : '45-minute scheduled window';
-  console.log(`[Auth] Auto-refreshing credential (${reason})…`);
+  const nowIso = new Date().toISOString();
+  const rawCred = findServiceAccountRaw();
 
-  // 1. Attempt fresh token minting via GoogleAuth service account credentials
-  if (GoogleAuth && process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+  // 1. Try GoogleAuth via service account credentials
+  if (GoogleAuth && rawCred) {
     try {
-      if (!_authClient) {
-        const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+      const credentials = parseServiceAccountJson(rawCred.value);
+      _serviceAccountEmail = credentials.client_email;
+
+      if (!_authClient || force) {
         const auth = new GoogleAuth({ credentials, scopes: GEMINI_SCOPES });
         _authClient = await auth.getClient();
       }
+
       const tokenObj = await _authClient.getAccessToken();
       if (tokenObj && tokenObj.token) {
         _cachedToken = tokenObj.token;
         _tokenLoadedAt = Date.now();
         _isServiceAccountActive = true;
-        console.log(`[Auth] ✓ Fresh token minted via GoogleAuth service account (${_cachedToken.substring(0, 7)}…)`);
-        return;
+        _lastAuthError = null;
+        const prefix = _cachedToken.slice(0, 10);
+        console.log(`[Auth] [${nowIso}] ✓ Token refreshed via GoogleAuth service account (${prefix}…) [${credentials.client_email}]`);
+        return _cachedToken;
+      } else {
+        throw new Error('GoogleAuth getAccessToken() returned empty token');
       }
     } catch (err) {
-      console.warn(`[Auth] ⚠ GoogleAuth token minting notice: ${err.message}`);
+      _lastAuthError = err.message;
+      console.error(`[Auth] [${nowIso}] ✗ Service account auth failed (${rawCred.key}):`, err.message);
+      if (err.stack) console.error(err.stack);
     }
   }
 
-  // 2. Fallback: Reload GEMINI_API_KEY from .env
-  try {
-    const envPath = path.join(__dirname, '.env');
-    if (fs.existsSync(envPath)) {
-      const envContent = fs.readFileSync(envPath, 'utf8');
-      const match = envContent.match(/^GEMINI_API_KEY\s*=\s*(.+)$/m);
-      if (match && match[1].trim()) {
-        const newKey = match[1].trim().replace(/^['"]|['"]$/g, '');
-        if (newKey) {
-          _cachedToken = newKey;
-          process.env.GEMINI_API_KEY = newKey;
-          _tokenLoadedAt = Date.now();
-          _isServiceAccountActive = false;
-          console.log(`[Auth] ✓ Active GEMINI_API_KEY verified from .env (${newKey.substring(0, 4)}…)`);
-          return;
-        }
-      }
-    }
-  } catch (_) {}
-
-  // 3. Keep current token and reset timer
-  if (_cachedToken) {
+  // 2. Fallback to static GEMINI_API_KEY
+  const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (staticKey && staticKey !== 'your_gemini_api_key_here') {
+    _cachedToken = staticKey;
     _tokenLoadedAt = Date.now();
+    _isServiceAccountActive = false;
+    const prefix = staticKey.slice(0, 10);
+    console.warn(`[Auth] [${nowIso}] ⚠ Using static API key (${prefix}…). Service account is NOT active — this key will expire hourly if starting with AQ.!`);
+    return _cachedToken;
   }
+
+  throw new Error('No valid Gemini credentials found. Please set GOOGLE_SERVICE_ACCOUNT_JSON or GEMINI_API_KEY.');
 }
 
 /**
@@ -166,7 +244,7 @@ async function getGeminiToken() {
   const isBearer = _cachedToken.startsWith('ya29.');
   const format = _cachedToken.startsWith('AQ.') ? 'AQ.'
                : _cachedToken.startsWith('AIza') ? 'AIza'
-               : _cachedToken.startsWith('ya29.') ? 'OAuth'
+               : _cachedToken.startsWith('ya29.') ? 'OAuth (ya29)'
                : 'Standard';
 
   return {
@@ -814,7 +892,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
     return res.status(500).json({ error: 'Server not configured. Please contact the administrator.', code });
   }
 
-  const { token, mode, isBearer } = cred;
+  let { token, mode, isBearer } = cred;
 
   /* ── 2. Auth-aware rate limiting (IP-based for anonymous, account-based for signed-in) ── */
   const clientIp = getClientIp(req);
@@ -871,7 +949,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   };
 
   /* ── 5. Try strategies ── */
-  const strategies = isBearer ? ['openai-compat', 'native'] : ['native'];
+  const strategies = isBearer ? ['native', 'openai-compat'] : ['native'];
   let hardAuthError = null;
   let rateLimitError = null;
 
@@ -892,6 +970,10 @@ app.post('/api/extract', authenticate, async (req, res) => {
             return res.status(422).json({ error: 'Image blocked by safety filters. Try a tighter crop.', code: 'SAFETY_BLOCK' });
           }
           if (!text) { continue; }
+
+          /* ── Record API success ── */
+          _lastSuccessfulApiCall = new Date().toISOString();
+          _totalSuccessfulCalls++;
 
           /* ── Increment usage counter ── */
           let remaining = null;
@@ -925,7 +1007,60 @@ app.post('/api/extract', authenticate, async (req, res) => {
           await new Promise(r => setTimeout(r, 500));
           continue;
         }
-        if (['AUTH_TOKEN_UNSUPPORTED','INVALID_KEY','ACCESS_DENIED'].includes(err.type)) {
+
+        if (['AUTH_TOKEN_UNSUPPORTED', 'INVALID_KEY', 'ACCESS_DENIED'].includes(err.type)) {
+          // If bearer token was rejected (e.g. Generative Language API restricting service accounts),
+          // check if a static GEMINI_API_KEY is available and fallback immediately!
+          const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+          if (isBearer && staticKey && staticKey !== token) {
+            console.warn(`[Auth] ⚠ Service account bearer token rejected (${err.msg}). Falling back to static GEMINI_API_KEY (${staticKey.slice(0, 10)}…)`);
+            token = staticKey;
+            isBearer = false;
+            _isServiceAccountActive = false;
+            // Retry this model immediately with the static key
+            const fallbackRes = await tryNativeEndpoint(model, token, false, nativeBody);
+            if (fallbackRes.res.ok) {
+              const text = fallbackRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+              if (text) {
+                _lastSuccessfulApiCall = new Date().toISOString();
+                _totalSuccessfulCalls++;
+                let remaining = null;
+                if (req.user) {
+                  const user = getUser(req.user.email);
+                  if (user) {
+                    refreshWindow(user);
+                    user.countInWindow = (user.countInWindow || 0) + 1;
+                    saveUser(user);
+                    remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
+                  }
+                  const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
+                  console.log(`[CodeSnapper] ✓ fallback native/${model} — ${text.length} chars (saved to history id: ${historyEntry?.id})`);
+                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, historyEntry });
+                } else {
+                  const newAnon = incAnonUsage(clientIp);
+                  remaining = newAnon.remaining;
+                  console.log(`[CodeSnapper] ✓ fallback native/${model} — ${text.length} chars (remaining: ${remaining})`);
+                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining });
+                }
+              }
+            }
+          }
+
+          // If service account is configured, try emergency token refresh once
+          if (!hardAuthError && (_isServiceAccountActive || findServiceAccountRaw())) {
+            console.log('[Auth] ⚠ Auth error encountered during extraction. Attempting emergency token refresh…');
+            try {
+              const freshToken = await refreshTokenIfNeeded(true);
+              if (freshToken && freshToken !== token) {
+                token = freshToken;
+                isBearer = freshToken.startsWith('ya29.');
+                console.log(`[Auth] ✓ Emergency token refreshed (${token.slice(0, 10)}…). Retrying request…`);
+                continue;
+              }
+            } catch (refErr) {
+              console.error('[Auth] ✗ Emergency refresh failed:', refErr.message);
+            }
+          }
           hardAuthError = err; break;
         }
 
@@ -960,18 +1095,41 @@ app.post('/api/extract', authenticate, async (req, res) => {
   });
 });
 
-/* ─── Health check ───────────────────────────────────────────────────────── */
-app.get('/api/health', (_req, res) => {
-  const envKey = (process.env.GEMINI_API_KEY || '').trim();
-  const format = envKey.startsWith('AQ.') ? 'AQ.' : envKey.startsWith('AIza') ? 'AIza' : envKey ? 'Standard' : 'none';
-  res.json({
-    status:   'ok',
-    keyReady: format !== 'none',
-    credMode: 'api-key',
-    keyFormat: format,
-    models:   GEMINI_MODELS,
-    stable:   true,
-  });
+/* ─── Health check endpoint (/health & /api/health) ───────────────────────── */
+function getHealthStatus() {
+  const tokenAgeMs = Date.now() - _tokenLoadedAt;
+  const tokenAgeMinutes = Math.floor(tokenAgeMs / 60000);
+  const nextRefreshInMinutes = Math.max(0, Math.ceil((TOKEN_REFRESH_INTERVAL_MS - tokenAgeMs) / 60000));
+  const rawCred = findServiceAccountRaw();
+  const credPrefix = _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none';
+
+  return {
+    status: 'ok',
+    auth: {
+      method: _isServiceAccountActive ? 'service-account' : 'api-key',
+      isServiceAccount: _isServiceAccountActive,
+      clientEmail: _serviceAccountEmail,
+      credentialPrefix: credPrefix,
+      tokenAgeMinutes,
+      tokenLoadedAt: new Date(_tokenLoadedAt).toISOString(),
+      nextRefreshInMinutes: _isServiceAccountActive ? nextRefreshInMinutes : null,
+      autoRefreshActive: _isServiceAccountActive,
+      rawConfiguredEnvVar: rawCred ? rawCred.key : (process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : null),
+      lastAuthError: _lastAuthError,
+      lastSuccessfulApiCall: _lastSuccessfulApiCall,
+      totalSuccessfulCalls: _totalSuccessfulCalls,
+      warning: !_isServiceAccountActive && credPrefix.startsWith('AQ.')
+        ? 'Using temporary AQ. token from GEMINI_API_KEY which will expire hourly. Configure GOOGLE_SERVICE_ACCOUNT_JSON for permanent auto-refresh.'
+        : null
+    },
+    models: GEMINI_MODELS,
+    serverTime: new Date().toISOString(),
+    stable: true
+  };
+}
+
+app.get(['/health', '/api/health'], (_req, res) => {
+  res.json(getHealthStatus());
 });
 
 /* ─── SPA fallback ───────────────────────────────────────────────────────── */
@@ -979,31 +1137,51 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 /* ─── Startup ────────────────────────────────────────────────────────────── */
 (async () => {
-  const envKey = (process.env.GEMINI_API_KEY || '').trim();
-  const format = envKey.startsWith('AQ.') ? 'AQ.' : envKey.startsWith('AIza') ? 'AIza' : envKey ? 'Standard' : 'none';
+  console.log('\n╔════════════════════════════════════════════╗');
+  console.log('║          CodeSnapper is starting           ║');
+  console.log('╚════════════════════════════════════════════╝');
 
-  if (format !== 'none') {
-    console.log(`[Creds] Gemini API Key detected (prefix: ${format})`);
-    console.log('[Creds]   delivery: ?key= query parameter (Google Gemini API Standard)');
-    console.log('[Creds]   status  : Active & Ready');
-  } else {
-    console.error('[Creds] ✗ No GEMINI_API_KEY configured in .env!');
+  // 1. Explicitly initialize authentication on startup
+  console.log('[Auth] Initializing Gemini API credentials...');
+  try {
+    await refreshTokenIfNeeded(true);
+  } catch (err) {
+    console.error('[Auth] ✗ Startup authentication check failed:', err.message);
   }
 
-  console.log('[Auth] Auto-refresh enabled — token will refresh every 45 minutes');
+  const rawCred = findServiceAccountRaw();
+  const credPrefix = _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none';
+
+  console.log('─────────────────────────────────────────────────────────────');
+  console.log(`[Auth] Active Method:     ${_isServiceAccountActive ? 'service-account (GoogleAuth)' : 'api-key (Static GEMINI_API_KEY)'}`);
+  console.log(`[Auth] Loaded Credential: ${credPrefix} (first 10 characters)`);
+  if (_isServiceAccountActive) {
+    console.log(`[Auth] Service Account:   ${_serviceAccountEmail}`);
+    console.log(`[Auth] Auto-refresh:      ✓ ENABLED — token will refresh automatically every 45 minutes`);
+  } else {
+    console.log(`[Auth] Service Account:   ✗ NOT DETECTED (checked env: ${rawCred ? rawCred.key : 'none found'})`);
+    if (_cachedToken.startsWith('AQ.')) {
+      console.warn(`[Auth] ⚠ WARNING: Running with static AQ. token (${credPrefix}).`);
+      console.warn(`[Auth] ⚠ AQ. tokens expire hourly! Add GOOGLE_SERVICE_ACCOUNT_JSON for permanent auto-refresh.`);
+    }
+  }
+  console.log('─────────────────────────────────────────────────────────────');
+
+  // 2. Set up proactive background token refresh every 45 minutes
+  setInterval(async () => {
+    try {
+      if (_isServiceAccountActive || findServiceAccountRaw()) {
+        await refreshTokenIfNeeded(true);
+      }
+    } catch (err) {
+      console.error('[Auth] Scheduled 45-minute background refresh error:', err.message);
+    }
+  }, TOKEN_REFRESH_INTERVAL_MS);
 
   app.listen(PORT, () => {
-    const credLabel = format !== 'none'
-      ? `✓ API Key active (${format} format — ?key= parameter)`
-      : '✗ NOT CONFIGURED';
-
-    console.log('\n╔════════════════════════════════════════════╗');
-    console.log('║          CodeSnapper is running            ║');
-    console.log('╚════════════════════════════════════════════╝');
     console.log(`  URL:      http://localhost:${PORT}`);
+    console.log(`  Health:   http://localhost:${PORT}/health`);
     console.log(`  Models:   ${GEMINI_MODELS.join(' → ')}`);
-    console.log(`  Creds:    ${credLabel}`);
-    console.log(`  Auto-Ref: 45-minute background auto-refresh active`);
     console.log(`  Auth:     JWT (30-day tokens, bcrypt passwords)`);
     console.log(`  Limits:   Anon=25 total  |  Signed-in=${AUTH_LIMIT}/24h rolling\n`);
   });
