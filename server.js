@@ -59,7 +59,7 @@ const GEMINI_MODELS = [
 ];
 
 const PER_MODEL_TIMEOUT_MS       = 5000;  // 5 seconds max per model attempt
-const MAX_IMAGE_TOTAL_TIMEOUT_MS = 15000; // 15 seconds max per image across ALL models combined
+const MAX_IMAGE_TOTAL_TIMEOUT_MS = 20000; // 20 seconds max per image across ALL models combined
 
 const EXTRACTION_PROMPT = `You are CodeSnapper — a precision code extraction engine. Your ONLY task is to transcribe the source code visible in this image.
 
@@ -731,6 +731,33 @@ app.get('/api/auth/me', authenticate, (req, res) => {
   });
 });
 
+/* ─── GET /api/user/usage ─────────────────────────────────────────────────── */
+app.get('/api/user/usage', authenticate, (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Authentication required.' });
+  }
+
+  const user = getUser(req.user.email);
+  if (!user) {
+    return res.status(404).json({ error: 'Account not found.' });
+  }
+
+  refreshWindow(user);
+  saveUser(user);
+
+  const used = user.countInWindow || 0;
+  const remaining = Math.max(0, AUTH_LIMIT - used);
+  const resetsAt = user.windowStart + WINDOW_MS;
+
+  res.json({
+    used,
+    limit: AUTH_LIMIT,
+    remaining,
+    resets_at: resetsAt,
+    resetAt: resetsAt,
+  });
+});
+
 /* ─── GET /api/history ───────────────────────────────────────────────────── */
 app.get('/api/history', authenticate, (req, res) => {
   if (!req.user) {
@@ -1028,7 +1055,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
         }
 
         const err = classifyGeminiError(gemRes.status, data);
-        console.error(`[CodeSnapper] ✗ ${endpoint}/${model} [${err.type}] ${err.msg}`);
+        console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | [${err.type}] ${err.msg}`);
 
         if (err.type === 'RATE_LIMIT') {
           console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model immediately…`);
@@ -1095,9 +1122,9 @@ app.post('/api/extract', authenticate, async (req, res) => {
       } catch (networkErr) {
         const attemptDuration = Date.now() - imageStartTime;
         if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
-          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) for ${strategy}/${model} after ${attemptDuration}ms. Failing over to next model immediately…`);
+          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="${strategy}" after ${attemptDuration}ms. Failing over to next model immediately…`);
         } else {
-          console.error(`[CodeSnapper] ✗ Network error on ${strategy}/${model}:`, networkErr.message);
+          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="${strategy}":`, networkErr.message);
         }
       }
     }
@@ -1105,8 +1132,9 @@ app.post('/api/extract', authenticate, async (req, res) => {
   }
 
   if (totalTimeoutExceeded) {
+    console.error(`[CodeSnapper] ✗ Image extraction timed out: exceeded total timeout of 20s (${Date.now() - imageStartTime}ms) across attempted models: ${GEMINI_MODELS.join(', ')}`);
     return res.status(504).json({
-      error: 'Image extraction timed out (exceeded 15s limit). Please try a tighter crop or check your network.',
+      error: 'Image extraction timed out (exceeded 20s limit). Please try a tighter crop or check your network.',
       code: 'IMAGE_TIMEOUT',
     });
   }
@@ -1125,6 +1153,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
     });
   }
 
+  console.error(`[CodeSnapper] ✗ All models failed for image! Attempted models: ${GEMINI_MODELS.join(' → ')} | Total elapsed: ${Date.now() - imageStartTime}ms`);
   return res.status(502).json({
     error: 'Could not reach Gemini API after trying all models. Check your internet connection.',
     code:  'ALL_MODELS_FAILED',

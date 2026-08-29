@@ -58,6 +58,7 @@ const state = {
   authToken:     null,         // JWT string or null
   authEmail:     null,         // signed-in email
   authRemaining: null,         // extractions remaining this window (number or null)
+  authUsed:      null,         // extractions used this window (from server)
   pendingExtract:false,        // true when extraction was queued but auth modal was shown
 };
 
@@ -78,6 +79,7 @@ const els = {
 
   uploadArea:      $('upload-area'),
   fileInput:       $('file-input'),
+  usageText:       $('usage-text'),
   usageCount:      $('usage-count'),
   usageFill:       $('usage-fill'),
   usageProgress:   $('usage-progress'),
@@ -302,23 +304,51 @@ function loadAuth() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_AUTH);
     if (!raw) return;
-    const { token, email, remaining } = JSON.parse(raw);
+    const { token, email, remaining, used } = JSON.parse(raw);
     state.authToken     = token     || null;
     state.authEmail     = email     || null;
     state.authRemaining = remaining ?? null;
+    state.authUsed      = used      ?? (remaining !== null ? Math.max(0, 50 - remaining) : null);
   } catch { /* corrupt — ignore */ }
 }
 
-function saveAuth(token, email, remaining) {
+function saveAuth(token, email, remaining, used = null) {
   state.authToken     = token;
   state.authEmail     = email;
   state.authRemaining = remaining ?? null;
-  localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify({ token, email, remaining }));
+  if (used !== null) state.authUsed = used;
+  else if (remaining !== null) state.authUsed = Math.max(0, 50 - remaining);
+  localStorage.setItem(STORAGE_KEY_AUTH, JSON.stringify({ token, email, remaining, used: state.authUsed }));
 }
 
 function clearAuth() {
-  state.authToken = state.authEmail = state.authRemaining = null;
+  state.authToken = state.authEmail = state.authRemaining = state.authUsed = null;
   localStorage.removeItem(STORAGE_KEY_AUTH);
+  updateUsageUI();
+}
+
+/* Fetch signed-in user's exact daily usage from server */
+async function fetchUserUsage() {
+  if (!state.authToken) {
+    updateUsageUI();
+    return null;
+  }
+  try {
+    const res = await fetch('/api/user/usage', {
+      headers: { 'Authorization': `Bearer ${state.authToken}` }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      state.authUsed = data.used ?? 0;
+      state.authRemaining = data.remaining ?? Math.max(0, 50 - state.authUsed);
+      updateUsageUI();
+      updateUserPill();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Usage] Could not fetch user usage:', err.message);
+  }
+  return null;
 }
 
 /* Verify JWT with server and refresh remaining count */
@@ -331,8 +361,7 @@ async function refreshAuthState() {
     if (r.ok) {
       const d = await r.json();
       state.authRemaining = d.remaining;
-      localStorage.setItem(STORAGE_KEY_AUTH,
-        JSON.stringify({ token: state.authToken, email: state.authEmail, remaining: d.remaining }));
+      await fetchUserUsage();
     } else {
       // token expired or account gone
       clearAuth();
@@ -602,8 +631,9 @@ function updateUserPill() {
   } else {
     closeHistoryDrawer();
   }
-  // Keep mobile drawer auth section in sync
+  // Keep mobile drawer auth section and usage counter in sync
   updateMobileNavAuth();
+  updateUsageUI();
 }
 
 /* ── AUTH MODAL UI ──────────────────────────────────────────── */
@@ -697,6 +727,7 @@ async function handleSignIn() {
   try {
     const d = await apiAuth('/api/auth/login', email, password);
     saveAuth(d.token, d.email, d.remaining);
+    await fetchUserUsage();
     closeAuthModal();
     updateUserPill();
     showToast(`Welcome back, ${d.email.split('@')[0]}!`);
@@ -740,6 +771,7 @@ async function handleSignUp() {
   try {
     const d = await apiAuth('/api/auth/register', email, password);
     saveAuth(d.token, d.email, d.remaining);
+    await fetchUserUsage();
     closeAuthModal();
     updateUserPill();
     showToast(`Account created! Welcome, ${d.email.split('@')[0]} ✨`);
@@ -764,11 +796,48 @@ function isLimited() {
 }
 
 function updateUsageUI() {
-  const n = getCount();
-  els.usageCount.textContent = n;
-  const pct = Math.min(100, (n / MAX_EXTRACTIONS) * 100);
-  els.usageFill.style.width = pct + '%';
-  els.usageProgress.setAttribute('aria-valuenow', n);
+  const usageCountEl = document.getElementById('usage-count');
+  const usageTextEl  = document.getElementById('usage-text') || (els ? els.usageText : null);
+  const usageFill    = document.getElementById('usage-fill') || (els ? els.usageFill : null);
+  const usageProg    = document.getElementById('usage-progress') || (els ? els.usageProgress : null);
+
+  if (state.authToken) {
+    // Signed-in user: always trust server-side usage count out of 50
+    const limit = 50;
+    const used = state.authUsed !== null
+      ? state.authUsed
+      : (state.authRemaining !== null ? Math.max(0, limit - state.authRemaining) : 0);
+
+    if (usageTextEl) {
+      usageTextEl.innerHTML = `<span class="count" id="usage-count">${used}</span> / ${limit} daily extractions used`;
+    } else if (usageCountEl) {
+      usageCountEl.textContent = used;
+    }
+
+    const pct = Math.min(100, Math.max(0, (used / limit) * 100));
+    if (usageFill) usageFill.style.width = pct + '%';
+    if (usageProg) {
+      usageProg.setAttribute('aria-valuemax', String(limit));
+      usageProg.setAttribute('aria-valuenow', String(used));
+    }
+  } else {
+    // Anonymous user: localStorage count out of 25
+    const limit = MAX_ANON_EXTRACTIONS || 25;
+    const n = getCount();
+
+    if (usageTextEl) {
+      usageTextEl.innerHTML = `<span class="count" id="usage-count">${n}</span> / ${limit} free extractions used`;
+    } else if (usageCountEl) {
+      usageCountEl.textContent = n;
+    }
+
+    const pct = Math.min(100, Math.max(0, (n / limit) * 100));
+    if (usageFill) usageFill.style.width = pct + '%';
+    if (usageProg) {
+      usageProg.setAttribute('aria-valuemax', String(limit));
+      usageProg.setAttribute('aria-valuenow', String(n));
+    }
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -1883,8 +1952,15 @@ async function runExtraction(croppedDataURL) {
     const { html, lang } = detectAndHighlight(parsed.code);
     setStep(4, true);
 
-    // Increment anon counter (signed-in users tracked server-side)
-    if (!state.authToken) { incCount(); updateUsageUI(); }
+    // Increment counter (anon in localStorage, signed-in synced with server)
+    if (!state.authToken) {
+      incCount();
+      updateUsageUI();
+    } else {
+      if (state.authUsed !== null) state.authUsed++;
+      updateUsageUI();
+      fetchUserUsage();
+    }
 
     // Show result
     state.extractedCode = parsed.code;
@@ -1989,6 +2065,12 @@ async function runBatchExtraction() {
     const num = i + 1;
     const progressPct = Math.round(((i) / total) * 100);
 
+    // 2-second delay between sequential batch images to prevent hitting rate limits
+    if (i > 0) {
+      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Pacing next extraction (2s)…';
+      await delay(2000);
+    }
+
     if (els.batchProcThumb) els.batchProcThumb.src = item.dataURL;
     if (els.batchProcBadge) els.batchProcBadge.textContent = `Image ${num} of ${total}`;
     if (els.batchProcName) els.batchProcName.textContent = `${item.name} (${item.sizeStr})`;
@@ -2007,8 +2089,23 @@ async function runBatchExtraction() {
       if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing with Gemini Vision…';
       els.procStatusText.textContent = `Processing image ${num} of ${total} · Gemini Vision AI`;
 
-      // 2. Call Gemini API
-      const raw = await callGemini(croppedDataURL);
+      // 2. Call Gemini API with automatic 1-time retry after 3s wait on failure
+      let raw;
+      try {
+        raw = await callGemini(croppedDataURL);
+      } catch (firstErr) {
+        if (firstErr.message.startsWith('DAILY_LIMIT:') || firstErr.message === 'ANON_LIMIT_REACHED') {
+          throw firstErr;
+        }
+        console.warn(`[Batch] Image ${num} attempt 1 failed (${firstErr.message}). Waiting 3s to retry…`);
+        if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Temporary issue — retrying in 3s…';
+        els.procStatusText.textContent = `Retrying image ${num} of ${total} after 3s…`;
+        await delay(3000);
+        if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing with Gemini Vision (Retry)…';
+        els.procStatusText.textContent = `Processing image ${num} of ${total} · Gemini Vision AI (Retry)`;
+        raw = await callGemini(croppedDataURL);
+      }
+
       setStep(2, true); setStep(3);
       if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Detecting syntax & highlighting…';
       els.procStatusText.textContent = `Processing image ${num} of ${total} · Syntax Highlighting`;
@@ -2063,6 +2160,9 @@ async function runBatchExtraction() {
       if (!state.authToken) {
         incCount();
         updateUsageUI();
+      } else {
+        if (state.authUsed !== null) state.authUsed++;
+        updateUsageUI();
       }
     } catch (err) {
       // Record failure for this specific item and continue batch
@@ -2089,6 +2189,10 @@ async function runBatchExtraction() {
 
   els.batchProgressPct.textContent = '100%';
   els.batchProgressFill.style.width = '100%';
+
+  if (state.authToken) {
+    fetchUserUsage();
+  }
 
   showBatchResults();
 }
