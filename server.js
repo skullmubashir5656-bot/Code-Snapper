@@ -1102,6 +1102,8 @@ function getHealthStatus() {
   const nextRefreshInMinutes = Math.max(0, Math.ceil((TOKEN_REFRESH_INTERVAL_MS - tokenAgeMs) / 60000));
   const rawCred = findServiceAccountRaw();
   const credPrefix = _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none';
+  const envKey = (process.env.GEMINI_API_KEY || '').trim();
+  const envKeyPrefix = envKey ? `${envKey.slice(0, 10)}...` : null;
 
   return {
     status: 'ok',
@@ -1110,16 +1112,18 @@ function getHealthStatus() {
       isServiceAccount: _isServiceAccountActive,
       clientEmail: _serviceAccountEmail,
       credentialPrefix: credPrefix,
+      configuredGeminiApiKeyPrefix: envKeyPrefix,
       tokenAgeMinutes,
       tokenLoadedAt: new Date(_tokenLoadedAt).toISOString(),
       nextRefreshInMinutes: _isServiceAccountActive ? nextRefreshInMinutes : null,
       autoRefreshActive: _isServiceAccountActive,
-      rawConfiguredEnvVar: rawCred ? rawCred.key : (process.env.GEMINI_API_KEY ? 'GEMINI_API_KEY' : null),
+      serviceAccountConfigured: !!rawCred,
+      rawConfiguredEnvVar: rawCred ? rawCred.key : (envKey ? 'GEMINI_API_KEY' : null),
       lastAuthError: _lastAuthError,
       lastSuccessfulApiCall: _lastSuccessfulApiCall,
       totalSuccessfulCalls: _totalSuccessfulCalls,
-      warning: !_isServiceAccountActive && credPrefix.startsWith('AQ.')
-        ? 'Using temporary AQ. token from GEMINI_API_KEY which will expire hourly. Configure GOOGLE_SERVICE_ACCOUNT_JSON for permanent auto-refresh.'
+      warning: !_isServiceAccountActive && (credPrefix.startsWith('AQ.') || (envKeyPrefix && envKeyPrefix.startsWith('AQ.')))
+        ? 'Using AQ. authorization key from GEMINI_API_KEY. For automatic token refresh, ensure GOOGLE_SERVICE_ACCOUNT_JSON is set in Render environment.'
         : null
     },
     models: GEMINI_MODELS,
