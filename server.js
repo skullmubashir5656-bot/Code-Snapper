@@ -1140,6 +1140,30 @@ app.get(['/health', '/api/health'], (_req, res) => {
   });
 });
 
+/* ─── Direct live Gemini test endpoint ───────────────────────────────────── */
+app.get('/api/test-gemini', async (_req, res) => {
+  const log = [];
+  const start = Date.now();
+  try {
+    const cred = await getGeminiToken();
+    log.push(`Cred: mode=${cred.mode}, isBearer=${cred.isBearer}, format=${cred.format}, tokenPrefix=${cred.token.slice(0, 10)}...`);
+
+    const testBody = { contents: [{ parts: [{ text: 'Respond with OK' }] }] };
+    const r1 = await tryNativeEndpoint('gemini-3.5-flash-lite', cred.token, cred.isBearer, testBody, 4000);
+    log.push(`Attempt 1 (gemini-3.5-flash-lite, isBearer=${cred.isBearer}): status=${r1.res.status}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
+
+    const envKey = (process.env.GEMINI_API_KEY || '').trim();
+    if (!r1.res.ok && envKey) {
+      const r2 = await tryNativeEndpoint('gemini-3.5-flash-lite', envKey, false, testBody, 4000);
+      log.push(`Attempt 2 (fallback to GEMINI_API_KEY=${envKey.slice(0, 10)}...): status=${r2.res.status}, data=${JSON.stringify(r2.data).slice(0, 250)}`);
+    }
+
+    res.json({ ok: true, durationMs: Date.now() - start, log });
+  } catch (e) {
+    res.json({ ok: false, durationMs: Date.now() - start, error: e.message, log });
+  }
+});
+
 /* ─── SPA fallback ───────────────────────────────────────────────────────── */
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
