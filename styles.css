@@ -426,6 +426,84 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   border-radius: 4px; color: var(--violet-d); font-weight: 700;
 }
 
+/* Tap to browse fallback button (especially on mobile) */
+.tap-to-browse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 8px 18px;
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: var(--r-md);
+  position: relative;
+  z-index: 2;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  transition: all var(--t-base);
+}
+.tap-to-browse-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--violet);
+  background: var(--card-2);
+}
+
+/* Server status banner (cold-start / connectivity check) */
+.server-status-banner {
+  background: rgba(239, 68, 68, 0.12);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.28);
+  color: #fca5a5;
+  font-size: 13.5px;
+  padding: 10px 16px;
+  position: sticky;
+  top: 60px;
+  z-index: 180;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: slideDown .2s ease both;
+}
+.server-status-banner.warming {
+  background: rgba(245, 158, 11, 0.14);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.32);
+  color: #fcd34d;
+}
+.server-status-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.server-status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #ef4444;
+  flex-shrink: 0;
+}
+.server-status-banner.warming .server-status-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: pulse 1.5s infinite;
+}
+.server-status-msg {
+  font-weight: 500;
+}
+.server-status-retry {
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  margin-left: 6px;
+  transition: all var(--t-base);
+}
+.server-status-retry:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
 /* ============================================================
    PROMINENT CAMERA ACTION CARD
    ============================================================ */

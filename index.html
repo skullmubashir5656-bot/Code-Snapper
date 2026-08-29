@@ -93,6 +93,15 @@
   </div>
 </div>
 
+<!-- Server connection / cold-start status banner -->
+<div id="server-status-banner" class="server-status-banner hidden" role="status" aria-live="polite">
+  <div class="server-status-inner">
+    <span class="server-status-dot" id="server-status-dot"></span>
+    <span class="server-status-msg" id="server-status-msg">Service temporarily unavailable — please try again in a moment</span>
+    <button class="server-status-retry" id="server-status-retry-btn" type="button">Retry</button>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════
      HERO / UPLOAD STATE
 ══════════════════════════════════════ -->
@@ -128,6 +137,11 @@
 
       <p class="upload-title">Drop your code screenshots here</p>
       <p class="upload-desc">Drag &amp; drop 1 or multiple images, click to browse, or paste</p>
+
+      <button type="button" class="btn btn-secondary tap-to-browse-btn" id="tap-to-browse-btn" aria-label="Browse and select image files">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Tap to Browse Photos
+      </button>
 
       <div class="upload-divider" aria-hidden="true">
         <span>or use keyboard shortcuts</span>
@@ -683,6 +697,10 @@
         <div class="input-wrap">
           <input type="password" id="signup-password-confirm" class="input input-mono"
                  placeholder="Re-enter password" autocomplete="new-password">
+          <button type="button" class="input-eye" id="signup-confirm-eye" aria-label="Show password">
+            <svg id="signup-confirm-eye-show" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            <svg id="signup-confirm-eye-hide" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+          </button>
         </div>
       </div>
       <p class="auth-error hidden" id="signup-error" role="alert"></p>

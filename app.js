@@ -77,12 +77,16 @@ const els = {
   processingPanel:   $('processing-panel'),
   resultPanel:       $('result-panel'),
 
-  uploadArea:      $('upload-area'),
-  fileInput:       $('file-input'),
-  usageText:       $('usage-text'),
-  usageCount:      $('usage-count'),
-  usageFill:       $('usage-fill'),
-  usageProgress:   $('usage-progress'),
+  uploadArea:           $('upload-area'),
+  fileInput:            $('file-input'),
+  tapToBrowseBtn:       $('tap-to-browse-btn'),
+  serverStatusBanner:   $('server-status-banner'),
+  serverStatusMsg:      $('server-status-msg'),
+  serverStatusRetryBtn: $('server-status-retry-btn'),
+  usageText:            $('usage-text'),
+  usageCount:           $('usage-count'),
+  usageFill:            $('usage-fill'),
+  usageProgress:        $('usage-progress'),
 
   // Batch Preview Elements
   batchCountTitle:      $('batch-count-title'),
@@ -172,6 +176,9 @@ const els = {
   authSignupCancelBtn:$('auth-signup-cancel-btn'),
 
   signupPasswordConfirm: $('signup-password-confirm'),
+  signupConfirmEye:      $('signup-confirm-eye'),
+  signupConfirmEyeShow:  $('signup-confirm-eye-show'),
+  signupConfirmEyeHide:  $('signup-confirm-eye-hide'),
 
   // user pill (header) & hero callout
   navSigninBtn:   $('nav-signin-btn'),
@@ -720,7 +727,7 @@ async function apiAuth(endpoint, email, password) {
 }
 
 async function handleSignIn() {
-  const email    = els.signinEmail.value.trim();
+  const email    = els.signinEmail.value.trim().toLowerCase();
   const password = els.signinPassword.value;
   els.signinError.classList.add('hidden');
   els.signinBtn.disabled = true;
@@ -743,7 +750,7 @@ async function handleSignIn() {
 }
 
 async function handleSignUp() {
-  const email       = els.signupEmail.value.trim();
+  const email       = els.signupEmail.value.trim().toLowerCase();
   const password    = els.signupPassword.value;
   const confirmPass = els.signupPasswordConfirm ? els.signupPasswordConfirm.value : '';
 
@@ -778,7 +785,22 @@ async function handleSignUp() {
     showToast(`Account created! Welcome, ${d.email.split('@')[0]} ✨`);
     if (state.pendingExtract) { state.pendingExtract = false; runExtraction(state.croppedDataURL); }
   } catch (e) {
-    els.signupError.textContent = e.message;
+    if (e.message && e.message.includes('already exists')) {
+      els.signupError.innerHTML = 'An account with this email already exists — <a href="#" id="signup-to-signin-link" style="color:var(--violet-d);text-decoration:underline;font-weight:600">sign in instead</a>';
+      const toSigninLink = document.getElementById('signup-to-signin-link');
+      if (toSigninLink) {
+        toSigninLink.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          switchAuthTab('signin');
+          if (els.signinEmail) {
+            els.signinEmail.value = email;
+            if (els.signinPassword) els.signinPassword.focus();
+          }
+        });
+      }
+    } else {
+      els.signupError.textContent = formatErrorMessage(e.message);
+    }
     els.signupError.classList.remove('hidden');
   } finally {
     els.signupBtn.disabled = false;
@@ -1019,11 +1041,11 @@ function showToast(msg = 'Copied!', type = 'success') {
 ═══════════════════════════════════════════════ */
 function loadImage(file) {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      return reject(new Error('Please upload an image file (PNG, JPG, WEBP, GIF).'));
+    if (!file || !file.type.startsWith('image/')) {
+      return reject(new Error('Please upload an image file (PNG, JPG, WEBP, or GIF)'));
     }
     if (file.size > MAX_FILE_SIZE) {
-      return reject(new Error(`Image is too large (${(file.size/1024/1024).toFixed(1)} MB). Max is 10 MB.`));
+      return reject(new Error('This image is too large — please use an image under 10MB'));
     }
 
     const reader = new FileReader();
@@ -1044,9 +1066,28 @@ function loadImage(file) {
 ═══════════════════════════════════════════════ */
 async function handleFiles(fileList) {
   if (!fileList || fileList.length === 0) return;
-  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  const allFiles = Array.from(fileList);
+
+  // 1. Check for non-image files
+  const nonImages = allFiles.filter(f => !f.type.startsWith('image/'));
+  if (nonImages.length > 0 && allFiles.length === nonImages.length) {
+    showError('Please upload an image file (PNG, JPG, WEBP, or GIF)', 'Invalid File Type');
+    if (els.fileInput) els.fileInput.value = '';
+    return;
+  }
+
+  // 2. Check for oversized files (> 10MB)
+  const oversized = allFiles.find(f => f.size > MAX_FILE_SIZE);
+  if (oversized) {
+    showError('This image is too large — please use an image under 10MB', 'Image Too Large');
+    if (els.fileInput) els.fileInput.value = '';
+    return;
+  }
+
+  const files = allFiles.filter(f => f.type.startsWith('image/'));
   if (files.length === 0) {
-    showError('Please upload valid image files (PNG, JPG, WEBP, GIF).', 'Invalid File Type');
+    showError('Please upload an image file (PNG, JPG, WEBP, or GIF)', 'Invalid File Type');
+    if (els.fileInput) els.fileInput.value = '';
     return;
   }
 
@@ -2025,6 +2066,7 @@ async function runExtraction(croppedDataURL) {
     // Step 2: server-side extraction call with active status updates
     els.procStatusText.textContent = 'Transcribing code with Vision AI…';
 
+    const extractStartTime = Date.now();
     const statusUpdates = [
       'Extracting code layout & characters…',
       'Transcribing syntax & line structures…',
@@ -2032,7 +2074,10 @@ async function runExtraction(croppedDataURL) {
     ];
     let updateIdx = 0;
     statusTicker = setInterval(() => {
-      if (updateIdx < statusUpdates.length) {
+      const elapsed = Date.now() - extractStartTime;
+      if (elapsed > 4000 && updateIdx === 0) {
+        els.procStatusText.textContent = 'Warming up... please wait a moment';
+      } else if (updateIdx < statusUpdates.length) {
         els.procStatusText.textContent = statusUpdates[updateIdx++];
       }
     }, 1200);
@@ -2795,6 +2840,13 @@ function bindEvents() {
     if (e.target.closest('#open-camera-btn')) return;
     els.fileInput.click();
   });
+  if (els.tapToBrowseBtn) {
+    els.tapToBrowseBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      els.fileInput.click();
+    });
+  }
   els.uploadArea.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') {
       if (e.target.closest('#open-camera-btn')) return;
@@ -3012,6 +3064,10 @@ function bindEvents() {
     toggleEye(els.signinPassword, els.signinEyeShow, els.signinEyeHide));
   els.signupEye.addEventListener('click', () =>
     toggleEye(els.signupPassword, els.signupEyeShow, els.signupEyeHide));
+  if (els.signupConfirmEye && els.signupPasswordConfirm) {
+    els.signupConfirmEye.addEventListener('click', () =>
+      toggleEye(els.signupPasswordConfirm, els.signupConfirmEyeShow, els.signupConfirmEyeHide));
+  }
 
   els.signupPassword.addEventListener('input', () => updateStrength(els.signupPassword.value));
 
@@ -3053,12 +3109,27 @@ function bindEvents() {
   els.errorModalCancel.addEventListener('click', () => closeModal(els.errorModal));
   els.errorRetryBtn.addEventListener('click', () => {
     closeModal(els.errorModal);
-    if (state.croppedDataURL) runExtraction(state.croppedDataURL);
+    if (state.isBatch && state.batchItems && state.batchItems.length > 0) {
+      runBatchExtraction();
+    } else if (state.croppedDataURL) {
+      runExtraction(state.croppedDataURL);
+    } else if (state.uploadedDataURL) {
+      runExtraction(state.uploadedDataURL);
+    } else {
+      if (els.fileInput) els.fileInput.click();
+    }
   });
   if (els.errorReportBtn) {
     els.errorReportBtn.addEventListener('click', () => {
       closeModal(els.errorModal);
       openFeedbackModal();
+    });
+  }
+
+  /* ── Server status banner retry ── */
+  if (els.serverStatusRetryBtn) {
+    els.serverStatusRetryBtn.addEventListener('click', () => {
+      checkServerConnection();
     });
   }
 
@@ -3246,6 +3317,54 @@ function enterManualCrop() {
 
 /* ═══════════════════════════════════════════════
    INIT
+/* ═══════════════════════════════════════════════
+   CONNECTION & COLD-START CHECK
+═══════════════════════════════════════════════ */
+let checkConnectionTimer = null;
+async function checkServerConnection(isRetry = false) {
+  const banner = document.getElementById('server-status-banner');
+  const msgEl = document.getElementById('server-status-msg');
+  if (!banner || !msgEl) return;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch('/health', { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      banner.classList.add('hidden');
+      banner.classList.remove('warming');
+      if (checkConnectionTimer) {
+        clearTimeout(checkConnectionTimer);
+        checkConnectionTimer = null;
+      }
+      return true;
+    } else {
+      banner.classList.remove('hidden');
+      banner.classList.remove('warming');
+      msgEl.textContent = 'Service temporarily unavailable — please try again in a moment';
+      return false;
+    }
+  } catch (err) {
+    banner.classList.remove('hidden');
+    if (err.name === 'AbortError' || isRetry) {
+      banner.classList.add('warming');
+      msgEl.textContent = 'Warming up... please wait a moment';
+      if (checkConnectionTimer) clearTimeout(checkConnectionTimer);
+      checkConnectionTimer = setTimeout(() => checkServerConnection(true), 3000);
+    } else {
+      banner.classList.remove('warming');
+      msgEl.textContent = 'Service temporarily unavailable — please try again in a moment';
+      if (checkConnectionTimer) clearTimeout(checkConnectionTimer);
+      checkConnectionTimer = setTimeout(() => checkServerConnection(true), 5000);
+    }
+    return false;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   INIT
 ═══════════════════════════════════════════════ */
 function init() {
   loadAuth();
@@ -3253,6 +3372,7 @@ function init() {
   updateUsageUI();
   updateUserPill();
   showPanel('hero');
+  checkServerConnection();
   // Clear any report hash from URL on refresh so modal never auto-opens
   if (window.location.hash === '#report-issue' || window.location.hash === '#report') {
     history.replaceState(null, '', window.location.pathname + window.location.search);

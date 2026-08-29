@@ -274,14 +274,48 @@ app.use(express.static(path.join(__dirname)));
 
 /* ─── SQLite Database Initialization ─────────────────────────────────────── */
 const Database = require('better-sqlite3');
-const DB_FILE  = path.join(__dirname, 'codesnapper.db');
+
+function resolveDatabasePath() {
+  const candidateDirs = [
+    process.env.DATA_DIR,
+    process.env.RENDER_DISK_PATH,
+    process.env.PERSISTENT_DIR,
+    '/var/data',
+    '/data',
+  ].filter(Boolean);
+
+  for (const dir of candidateDirs) {
+    try {
+      if (fs.existsSync(dir)) {
+        fs.accessSync(dir, fs.constants.W_OK);
+        const persistentPath = path.join(dir, 'codesnapper.db');
+        console.log(`[Database] ✓ Using persistent disk storage at: ${persistentPath}`);
+        return persistentPath;
+      }
+    } catch (e) {
+      console.warn(`[Database] Candidate directory "${dir}" not writable:`, e.message);
+    }
+  }
+
+  const localPath = path.join(__dirname, 'codesnapper.db');
+  if (process.env.RENDER === 'true') {
+    console.warn('\n[Database] ⚠️  RENDER ENVIRONMENT DETECTED WITHOUT PERSISTENT DISK!');
+    console.warn('[Database] Render ephemeral filesystem resets on redeployment.');
+    console.warn('[Database] To persist registered user accounts across redeploys, attach a Render Disk at mount path: /var/data\n');
+  } else {
+    console.log(`[Database] Using database file: ${localPath}`);
+  }
+  return localPath;
+}
+
+const DB_FILE  = resolveDatabasePath();
 const db       = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 
 // Table schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
-    email TEXT PRIMARY KEY,
+    email TEXT PRIMARY KEY COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     window_start INTEGER NOT NULL,
@@ -415,10 +449,12 @@ function incAnonUsage(ip) {
 }
 
 function getUser(email) {
-  const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  if (!email || typeof email !== 'string') return null;
+  const clean = email.toLowerCase().trim();
+  const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(clean);
   if (!row) return null;
   return {
-    email: row.email,
+    email: row.email.toLowerCase().trim(),
     passwordHash: row.password_hash,
     createdAt: row.created_at,
     windowStart: row.window_start,
@@ -427,6 +463,7 @@ function getUser(email) {
 }
 
 function saveUser(user) {
+  const cleanEmail = (user.email || '').toLowerCase().trim();
   db.prepare(`
     INSERT INTO users (email, password_hash, created_at, window_start, count_in_window)
     VALUES (?, ?, ?, ?, ?)
@@ -435,7 +472,7 @@ function saveUser(user) {
       created_at = excluded.created_at,
       window_start = excluded.window_start,
       count_in_window = excluded.count_in_window
-  `).run(user.email, user.passwordHash, user.createdAt, user.windowStart, user.countInWindow);
+  `).run(cleanEmail, user.passwordHash, user.createdAt, user.windowStart, user.countInWindow);
 }
 
 function refreshWindow(user) {
@@ -664,7 +701,7 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
   if (getUser(emailClean))
-    return res.status(409).json({ error: 'An account with this email already exists. Try signing in.' });
+    return res.status(409).json({ error: 'An account with this email already exists — sign in instead.' });
 
   const passwordHash = await bcrypt.hash(password, 12);
   const now = Date.now();
@@ -690,8 +727,10 @@ app.post('/api/auth/login', async (req, res) => {
   if (!email || !password)
     return res.status(400).json({ error: 'Email and password are required.' });
 
-  const emailClean = email.toLowerCase().trim();
+  const emailClean = (email || '').toLowerCase().trim();
   const user = getUser(emailClean);
+
+  console.log(`[Auth] Login attempt for [${emailClean}] — found: ${user ? 'yes' : 'no'}`);
 
   if (!user)
     return res.status(401).json({ error: 'No account found with this email.' });
