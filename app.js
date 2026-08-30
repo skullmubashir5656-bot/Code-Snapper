@@ -692,10 +692,10 @@ function openAuthModal(opts = {}) {
 
   if (opts.fromLimit) {
     els.authModalDesc.innerHTML =
-      'You’ve used all 25 free extractions. Sign in for <strong>50 extractions/day + code history</strong>.';
+      'You’ve used all 25 free extractions. Sign in to unlock <strong>50 extractions per day · Personal code history · Secure & private</strong>';
   } else {
     els.authModalDesc.innerHTML =
-      'Sign in for <strong>50 extractions/day + code history</strong>.';
+      '<strong>50 extractions per day · Personal code history · Secure & private</strong>';
   }
 
   openModal(els.authModal);
@@ -3407,27 +3407,35 @@ function bindEvents() {
   }
 
   /* ── Feedback modal ── */
-  if (els.reportIssueResultBtn) {
-    els.reportIssueResultBtn.addEventListener('click', openFeedbackModal);
-  }
-  if (els.footerReportLink) {
-    els.footerReportLink.addEventListener('click', e => {
-      e.preventDefault();
-      openFeedbackModal();
-    });
-  }
+  const reportBtns = [
+    els.footerReportLink || document.getElementById('footer-report-link'),
+    els.reportIssueResultBtn || document.getElementById('report-issue-result-btn'),
+    els.errorReportBtn || document.getElementById('error-report-btn'),
+  ];
+  reportBtns.forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', e => {
+        if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        openFeedbackModal();
+      });
+    }
+  });
+
   if (els.feedbackModalClose) {
     els.feedbackModalClose.addEventListener('click', closeFeedbackModal);
   }
   if (els.feedbackCancelBtn) {
     els.feedbackCancelBtn.addEventListener('click', closeFeedbackModal);
   }
-  if (els.feedbackForm) {
-    els.feedbackForm.addEventListener('submit', handleFeedbackSubmit);
+  if (els.feedbackForm || document.getElementById('feedback-form')) {
+    const form = els.feedbackForm || document.getElementById('feedback-form');
+    form.addEventListener('submit', handleFeedbackSubmit);
   }
-  if (els.feedbackDesc && els.feedbackCharCount) {
-    els.feedbackDesc.addEventListener('input', () => {
-      els.feedbackCharCount.textContent = `${els.feedbackDesc.value.length} / 500`;
+  const descInput = els.feedbackDesc || document.getElementById('feedback-desc');
+  const countLabel = els.feedbackCharCount || document.getElementById('feedback-char-count');
+  if (descInput && countLabel) {
+    descInput.addEventListener('input', () => {
+      countLabel.textContent = `${descInput.value.length} / 500`;
     });
   }
 
@@ -3480,7 +3488,13 @@ function bindEvents() {
   }
 
   /* ── Close modals on backdrop click ── */
-  [els.authModal, els.errorModal, els.feedbackModal, els.rateModal].forEach(modal => {
+  const allModals = [
+    els.authModal || document.getElementById('auth-modal'),
+    els.errorModal || document.getElementById('error-modal'),
+    els.feedbackModal || document.getElementById('feedback-modal'),
+    els.rateModal || document.getElementById('rate-modal'),
+  ];
+  allModals.forEach(modal => {
     if (modal) modal.addEventListener('click', e => {
       if (e.target === modal) closeModal(modal);
     });
@@ -3489,7 +3503,7 @@ function bindEvents() {
   /* ── Close modals and drawer on Escape ── */
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      [els.authModal, els.errorModal, els.feedbackModal, els.rateModal].forEach(modal => {
+      allModals.forEach(modal => {
         if (modal && !modal.classList.contains('hidden')) closeModal(modal);
       });
       if (els.historyDrawerWrap && !els.historyDrawerWrap.classList.contains('hidden')) {
@@ -3503,15 +3517,21 @@ function bindEvents() {
    FEEDBACK / BUG REPORT
 ═══════════════════════════════════════════════ */
 function openFeedbackModal() {
-  if (!els.feedbackModal) return;
-  els.feedbackForm?.reset();
-  if (els.feedbackCharCount) els.feedbackCharCount.textContent = '0 / 500';
-  openModal(els.feedbackModal);
+  const modal = els.feedbackModal || document.getElementById('feedback-modal');
+  if (!modal) return;
+  const form = els.feedbackForm || document.getElementById('feedback-form');
+  if (form) form.reset();
+  const charCount = els.feedbackCharCount || document.getElementById('feedback-char-count');
+  if (charCount) charCount.textContent = '0 / 500';
+  const errBox = document.getElementById('feedback-error-container');
+  if (errBox) errBox.style.display = 'none';
+  openModal(modal);
 }
 
 function closeFeedbackModal() {
-  if (!els.feedbackModal) return;
-  closeModal(els.feedbackModal);
+  const modal = els.feedbackModal || document.getElementById('feedback-modal');
+  if (!modal) return;
+  closeModal(modal);
   const errBox = document.getElementById('feedback-error-container');
   if (errBox) errBox.style.display = 'none';
   if (window.location.hash) {
