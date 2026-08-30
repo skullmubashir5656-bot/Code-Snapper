@@ -392,16 +392,22 @@ function openHistoryDrawer() {
     openAuthModal({ msg: 'Sign in to view your 90-day extraction history.' });
     return;
   }
-  if (els.historyDrawerWrap) {
-    els.historyDrawerWrap.classList.remove('hidden');
+  const wrap = els.historyDrawerWrap || document.getElementById('history-drawer-wrap');
+  if (wrap) {
+    wrap.classList.remove('hidden');
+    wrap.removeAttribute('hidden');
+    wrap.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     fetchHistory();
   }
 }
 
 function closeHistoryDrawer() {
-  if (els.historyDrawerWrap) {
-    els.historyDrawerWrap.classList.add('hidden');
+  const wrap = els.historyDrawerWrap || document.getElementById('history-drawer-wrap');
+  if (wrap) {
+    wrap.classList.add('hidden');
+    wrap.setAttribute('hidden', 'true');
+    wrap.style.display = 'none';
     document.body.style.overflow = '';
   }
 }
@@ -642,10 +648,14 @@ function updateUserPill() {
   }
   if (els.navHistoryBtn) {
     els.navHistoryBtn.classList.toggle('hidden', !signedIn);
+    if (signedIn) els.navHistoryBtn.removeAttribute('hidden');
+    else els.navHistoryBtn.setAttribute('hidden', 'true');
     els.navHistoryBtn.style.display = signedIn ? 'inline-flex' : 'none';
   }
   if (els.mobileNavHistory) {
     els.mobileNavHistory.classList.toggle('hidden', !signedIn);
+    if (signedIn) els.mobileNavHistory.removeAttribute('hidden');
+    else els.mobileNavHistory.setAttribute('hidden', 'true');
     els.mobileNavHistory.style.display = signedIn ? 'flex' : 'none';
   }
   if (signedIn) {
@@ -2430,7 +2440,7 @@ async function runExtraction(croppedDataURL) {
     displayResult(resolvedCode, html, lang, state.ambiguities);
   } catch (err) {
     if (statusTicker) clearInterval(statusTicker);
-    showPanel('crop-select');
+    resetToHero();
     const msg = formatErrorMessage(err);
     showError(msg);
   }
@@ -3382,15 +3392,7 @@ function bindEvents() {
   els.errorModalCancel.addEventListener('click', () => closeModal(els.errorModal));
   els.errorRetryBtn.addEventListener('click', () => {
     closeModal(els.errorModal);
-    if (state.isBatch && state.batchItems && state.batchItems.length > 0) {
-      runBatchExtraction();
-    } else if (state.croppedDataURL) {
-      runExtraction(state.croppedDataURL);
-    } else if (state.uploadedDataURL) {
-      runExtraction(state.uploadedDataURL);
-    } else {
-      if (els.fileInput) els.fileInput.click();
-    }
+    resetToHero();
   });
   if (els.errorReportBtn) {
     els.errorReportBtn.addEventListener('click', () => {
@@ -3628,10 +3630,16 @@ async function handleFeedbackSubmit(e) {
    CROP ENTRY POINTS
 ═══════════════════════════════════════════════ */
 function enterAutoCrop() {
-  if (!state.uploadedImg) return;
-  // Silent Auto Crop — detect code region, crop offscreen, and extract immediately with 0 clicks
-  const croppedDataURL = autoCropImage(state.uploadedImg);
+  if (!state.uploadedImg && !state.uploadedDataURL) return;
+  let croppedDataURL = null;
+  if (state.uploadedImg) {
+    croppedDataURL = autoCropImage(state.uploadedImg);
+  }
   const dataURL = croppedDataURL || state.uploadedDataURL;
+  if (!dataURL) {
+    showError('Could not process image for extraction.');
+    return;
+  }
   runExtraction(dataURL);
 }
 
