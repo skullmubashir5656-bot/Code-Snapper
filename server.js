@@ -65,17 +65,21 @@ const EXTRACTION_PROMPT = `You are CodeSnapper — a precision code extraction e
 
 IMPORTANT: The image may be rotated, taken at an angle, in portrait or landscape orientation, or photographed from a screen. Mentally correct for any rotation or perspective and extract the code as if the image were perfectly straight.
 
-STRICT RULES — FOLLOW EXACTLY:
-1. Output ONLY the raw source code — absolutely nothing else before the code starts
-2. Do NOT wrap in markdown code fences (no \`\`\` blocks)
-3. Do NOT add any explanations, labels, comments, or descriptions
-4. Preserve EXACT indentation — spaces and tabs exactly as shown
-5. Preserve ALL special characters exactly: : ; , . ( ) [ ] { } < > / \\ | + - * = ! @ # $ % ^ & ~ ? ' " \` newlines etc.
-6. Preserve EXACT line breaks — every line of code on its own line
-7. Do NOT modify, fix, or "improve" the code — transcribe it EXACTLY as displayed
-8. After the code, if you are uncertain about ANY characters, add a blank line then:
+STRICT OUTPUT FORMAT — FOLLOW EXACTLY:
+1. On the very FIRST line, output the detected programming language in this exact format:
+   # LANGUAGE: <language>
+   Examples: # LANGUAGE: python, # LANGUAGE: javascript, # LANGUAGE: typescript, # LANGUAGE: html, # LANGUAGE: css, # LANGUAGE: java, # LANGUAGE: cpp, # LANGUAGE: csharp, # LANGUAGE: sql, # LANGUAGE: php, # LANGUAGE: ruby, # LANGUAGE: go, # LANGUAGE: rust, # LANGUAGE: bash
+   If the language cannot be identified with certainty, output: # LANGUAGE: Code
+2. On subsequent lines, output ONLY the transcribed source code.
+3. Do NOT wrap in markdown code fences (no \`\`\` blocks).
+4. Do NOT add any explanations, preambles, comments, or descriptions.
+5. Preserve EXACT indentation — spaces and tabs exactly as shown.
+6. Preserve ALL special characters exactly: : ; , . ( ) [ ] { } < > / \\ | + - * = ! @ # $ % ^ & ~ ? ' " \` newlines etc.
+7. Preserve EXACT line breaks — every line of code on its own line.
+8. Do NOT modify, fix, or "improve" the code — transcribe it EXACTLY as displayed.
+9. After the code, if you are uncertain about ANY characters, add a blank line then:
    # AMBIGUOUS: line [N]: '[char]' could be '[alternative]'
-9. If the image does NOT contain source code or programming language code (for example: photos, artwork, logos, people, or document text without source code), output EXACTLY: # NO_CODE_FOUND
+10. If the image does NOT contain source code or programming language code, output EXACTLY: # NO_CODE_FOUND
 
 Transcribe the code now:`;
 
@@ -272,7 +276,8 @@ async function getGeminiToken() {
 app.use(express.json({ limit: '25mb' }));
 app.use(express.static(path.join(__dirname)));
 
-/* ─── SQLite Database Initialization ─────────────────────────────────────── */
+/* ─── Persistent External Database Connection (Turso / SQLite Fallback) ────── */
+const { createClient } = require('@libsql/client');
 const Database = require('better-sqlite3');
 
 function resolveDatabasePath() {
@@ -298,60 +303,109 @@ function resolveDatabasePath() {
   }
 
   const localPath = path.join(__dirname, 'codesnapper.db');
-  if (process.env.RENDER === 'true') {
-    console.warn('\n[Database] ⚠️  RENDER ENVIRONMENT DETECTED WITHOUT PERSISTENT DISK!');
-    console.warn('[Database] Render ephemeral filesystem resets on redeployment.');
-    console.warn('[Database] To persist registered user accounts across redeploys, attach a Render Disk at mount path: /var/data\n');
-  } else {
-    console.log(`[Database] Using database file: ${localPath}`);
-  }
   return localPath;
 }
 
-const DB_FILE  = resolveDatabasePath();
-const db       = new Database(DB_FILE);
+const DB_FILE = resolveDatabasePath();
+const db = new Database(DB_FILE);
 db.pragma('journal_mode = WAL');
 
-// Table schema
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    email TEXT PRIMARY KEY COLLATE NOCASE,
-    password_hash TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    window_start INTEGER NOT NULL,
-    count_in_window INTEGER DEFAULT 0
-  );
-  CREATE TABLE IF NOT EXISTS anon_usage (
-    ip TEXT PRIMARY KEY,
-    count INTEGER DEFAULT 0,
-    last_used_at INTEGER NOT NULL
-  );
-  CREATE TABLE IF NOT EXISTS feedback (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT NOT NULL,
-    description TEXT,
-    timestamp TEXT NOT NULL,
-    user_email TEXT,
-    page TEXT
-  );
-  CREATE TABLE IF NOT EXISTS ratings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    stars INTEGER NOT NULL,
-    feedback TEXT,
-    user_email TEXT NOT NULL DEFAULT 'anonymous',
-    timestamp TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );
-`);
+const TURSO_URL   = (process.env.TURSO_DATABASE_URL || process.env.LIBSQL_URL || '').trim();
+const TURSO_TOKEN = (process.env.TURSO_AUTH_TOKEN || process.env.LIBSQL_AUTH_TOKEN || '').trim();
 
-// Dynamic column migrations for users table (total_extractions, has_rated)
-const userCols = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
-if (!userCols.includes('total_extractions')) {
-  db.exec(`ALTER TABLE users ADD COLUMN total_extractions INTEGER DEFAULT 0;`);
+let isTursoActive = false;
+let authClient;
+
+if (TURSO_URL && TURSO_TOKEN) {
+  try {
+    authClient = createClient({
+      url: TURSO_URL,
+      authToken: TURSO_TOKEN,
+    });
+    isTursoActive = true;
+    console.log(`[Database] ✓ Connected to persistent cloud database (Turso): ${TURSO_URL.replace(/:\/\/.*@/, '://***@')}`);
+  } catch (err) {
+    console.error('[Database] ✗ Failed to initialize Turso client, falling back to local SQLite:', err.message);
+  }
 }
-if (!userCols.includes('has_rated')) {
-  db.exec(`ALTER TABLE users ADD COLUMN has_rated INTEGER DEFAULT 0;`);
+
+if (!isTursoActive) {
+  authClient = createClient({
+    url: 'file:' + DB_FILE,
+  });
+  if (process.env.RENDER === 'true') {
+    console.warn('\n[Database] ⚠️  RENDER DETECTED WITHOUT TURSO_DATABASE_URL!');
+    console.warn('[Database] User accounts stored on ephemeral disk will reset on redeployment.');
+    console.warn('[Database] To persist user accounts permanently across all redeploys, set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Render environment variables.\n');
+  } else {
+    console.log(`[Database] Using local database file: ${DB_FILE}`);
+  }
 }
+
+// Initialize tables on authClient asynchronously on startup
+(async function initAuthDatabase() {
+  try {
+    await authClient.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        email TEXT PRIMARY KEY COLLATE NOCASE,
+        password_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        window_start INTEGER NOT NULL,
+        count_in_window INTEGER DEFAULT 0,
+        total_extractions INTEGER DEFAULT 0,
+        has_rated INTEGER DEFAULT 0
+      );
+    `);
+    await authClient.execute(`
+      CREATE TABLE IF NOT EXISTS anon_usage (
+        ip TEXT PRIMARY KEY,
+        count INTEGER DEFAULT 0,
+        last_used_at INTEGER NOT NULL
+      );
+    `);
+    await authClient.execute(`
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        description TEXT,
+        timestamp TEXT NOT NULL,
+        user_email TEXT,
+        page TEXT
+      );
+    `);
+    await authClient.execute(`
+      CREATE TABLE IF NOT EXISTS ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stars INTEGER NOT NULL,
+        feedback TEXT,
+        user_email TEXT NOT NULL DEFAULT 'anonymous',
+        timestamp TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
+
+    // If connected to external Turso and Turso users table is empty, auto-migrate existing local SQLite users
+    if (isTursoActive) {
+      const tursoUsers = await authClient.execute('SELECT COUNT(*) as count FROM users');
+      const count = Number(tursoUsers.rows[0]?.count || 0);
+      if (count === 0) {
+        const localUsers = db.prepare('SELECT * FROM users').all();
+        if (localUsers.length > 0) {
+          console.log(`[Database] Migrating ${localUsers.length} local SQLite user(s) to persistent Turso cloud...`);
+          for (const u of localUsers) {
+            await authClient.execute({
+              sql: `INSERT OR IGNORE INTO users (email, password_hash, created_at, window_start, count_in_window, total_extractions, has_rated) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              args: [u.email, u.password_hash, u.created_at, u.window_start, u.count_in_window || 0, u.total_extractions || 0, u.has_rated || 0],
+            });
+          }
+          console.log('[Database] ✓ Migration to Turso cloud complete!');
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[Database] Table initialization error:', err.message);
+  }
+})();
 
 // Dynamic schema migration for extraction_history (90-day retention schema)
 const historyTableInfo = db.prepare(`PRAGMA table_info(extraction_history)`).all();
@@ -449,60 +503,101 @@ function getClientIp(req) {
   return req.socket.remoteAddress || req.ip || '127.0.0.1';
 }
 
-function getAnonUsage(ip) {
-  const row = db.prepare('SELECT count FROM anon_usage WHERE ip = ?').get(ip);
-  const count = row ? row.count : 0;
-  return { ip, count, remaining: Math.max(0, ANON_LIMIT - count), limit: ANON_LIMIT };
+async function getAnonUsage(ip) {
+  try {
+    const res = await authClient.execute({
+      sql: 'SELECT count FROM anon_usage WHERE ip = ?',
+      args: [ip],
+    });
+    const count = (res.rows && res.rows[0]) ? Number(res.rows[0].count) : 0;
+    return { ip, count, remaining: Math.max(0, ANON_LIMIT - count), limit: ANON_LIMIT };
+  } catch (err) {
+    return { ip, count: 0, remaining: ANON_LIMIT, limit: ANON_LIMIT };
+  }
 }
 
-function incAnonUsage(ip) {
+async function incAnonUsage(ip) {
   const now = Date.now();
-  db.prepare(`
-    INSERT INTO anon_usage (ip, count, last_used_at)
-    VALUES (?, 1, ?)
-    ON CONFLICT(ip) DO UPDATE SET count = count + 1, last_used_at = ?
-  `).run(ip, now, now);
+  try {
+    await authClient.execute({
+      sql: `
+        INSERT INTO anon_usage (ip, count, last_used_at)
+        VALUES (?, 1, ?)
+        ON CONFLICT(ip) DO UPDATE SET count = count + 1, last_used_at = ?
+      `,
+      args: [ip, now, now],
+    });
+  } catch (err) {
+    console.error('[Database] incAnonUsage error:', err.message);
+  }
   return getAnonUsage(ip);
 }
 
-function getUser(email) {
+async function getUser(email) {
   if (!email || typeof email !== 'string') return null;
   const clean = email.toLowerCase().trim();
-  const row = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(clean);
-  if (!row) return null;
-  return {
-    email: row.email.toLowerCase().trim(),
-    passwordHash: row.password_hash,
-    createdAt: row.created_at,
-    windowStart: row.window_start,
-    countInWindow: row.count_in_window,
-  };
+  try {
+    const res = await authClient.execute({
+      sql: 'SELECT * FROM users WHERE LOWER(email) = LOWER(?)',
+      args: [clean],
+    });
+    const row = res.rows && res.rows[0];
+    if (!row) return null;
+    return {
+      email: String(row.email).toLowerCase().trim(),
+      passwordHash: String(row.password_hash),
+      createdAt: Number(row.created_at),
+      windowStart: Number(row.window_start),
+      countInWindow: Number(row.count_in_window || 0),
+      totalExtractions: Number(row.total_extractions || 0),
+      hasRated: Number(row.has_rated || 0),
+    };
+  } catch (err) {
+    console.error(`[Database] getUser error for [${clean}]:`, err.message);
+    return null;
+  }
 }
 
-function saveUser(user) {
+async function saveUser(user) {
   const cleanEmail = (user.email || '').toLowerCase().trim();
-  db.prepare(`
-    INSERT INTO users (email, password_hash, created_at, window_start, count_in_window)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(email) DO UPDATE SET
-      password_hash = excluded.password_hash,
-      created_at = excluded.created_at,
-      window_start = excluded.window_start,
-      count_in_window = excluded.count_in_window
-  `).run(cleanEmail, user.passwordHash, user.createdAt, user.windowStart, user.countInWindow);
+  try {
+    await authClient.execute({
+      sql: `
+        INSERT INTO users (email, password_hash, created_at, window_start, count_in_window, total_extractions, has_rated)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET
+          password_hash = excluded.password_hash,
+          created_at = excluded.created_at,
+          window_start = excluded.window_start,
+          count_in_window = excluded.count_in_window,
+          total_extractions = excluded.total_extractions,
+          has_rated = excluded.has_rated
+      `,
+      args: [
+        cleanEmail,
+        user.passwordHash,
+        user.createdAt || Date.now(),
+        user.windowStart || Date.now(),
+        user.countInWindow || 0,
+        user.totalExtractions || 0,
+        user.hasRated || 0,
+      ],
+    });
+  } catch (err) {
+    console.error(`[Database] saveUser error for [${cleanEmail}]:`, err.message);
+  }
 }
 
-function refreshWindow(user) {
+async function refreshWindow(user) {
   const now = Date.now();
   if (!user.windowStart || now - user.windowStart > WINDOW_MS) {
     user.windowStart   = now;
     user.countInWindow = 0;
-    saveUser(user);
+    await saveUser(user);
   }
 }
 
 function getRemaining(user) {
-  refreshWindow(user);
   return Math.max(0, AUTH_LIMIT - (user.countInWindow || 0));
 }
 
@@ -759,23 +854,27 @@ function relabelHistoryLanguages() {
 
     for (const row of rows) {
       if (!row.extracted_code) continue;
-      const detected = detectCodeLanguage(row.extracted_code);
-      const isWrongPhp = (row.language === 'php' && detected !== 'php');
-      const isUnresolved = (row.language === 'auto' || row.language === 'unknown' || row.language === 'plaintext');
-      const isPythonMismatch = (detected === 'python' && row.language !== 'python');
-
-      if ((isWrongPhp || isUnresolved || isPythonMismatch) && detected !== 'plaintext') {
+      // If language was php, or auto, or unknown, or plaintext
+      if (row.language === 'php' || row.language === 'auto' || row.language === 'unknown' || row.language === 'plaintext' || !row.language) {
+        let newLang = 'Code';
+        const langMatch = row.extracted_code.match(/^[ \t]*#[ \t]*LANGUAGE:[ \t]*([^\r\n]+)/im);
+        if (langMatch) {
+          const l = langMatch[1].trim().toLowerCase();
+          if (l && !['unknown', 'auto', 'code', 'plaintext', 'none'].includes(l)) {
+            newLang = formatLanguageName(l);
+          }
+        }
         const isBatch = row.custom_name && row.custom_name.startsWith('Batch ');
         let newName = row.custom_name;
         if (!isBatch && (!row.custom_name || row.custom_name.startsWith('PHP ·') || row.custom_name.startsWith('Code ·') || row.custom_name.startsWith('Unknown ·'))) {
-          newName = generateStandardHistoryName(detected, row.created_at);
+          newName = generateStandardHistoryName(newLang, row.created_at);
         }
-        updateStmt.run(detected, newName, row.id);
+        updateStmt.run(newLang, newName, row.id);
         updatedCount++;
       }
     }
     if (updatedCount > 0) {
-      console.log(`[Language Relabel] Corrected ${updatedCount} history entries with accurate syntax analysis`);
+      console.log(`[Language Relabel] Reset ${updatedCount} legacy history entries to verified Gemini language / "Code"`);
     }
   } catch (err) {
     console.warn('[Language Relabel] Note:', err.message);
@@ -798,11 +897,19 @@ try {
   console.warn('[Database] Unique constraint note:', err.message);
 }
 
-function saveExtractionHistory(email, extractedCode, language = 'auto', customName = null, batchCount = null) {
+function saveExtractionHistory(email, extractedCode, language = 'Code', customName = null, batchCount = null) {
   if (!email || !extractedCode || typeof extractedCode !== 'string') return null;
   const emailClean = email.toLowerCase().trim();
   const now = Date.now();
   const expiresAt = now + NINETY_DAYS_MS;
+
+  // Language defaults strictly to "Code" if missing or generic
+  let finalLang = (language && typeof language === 'string') ? language.trim() : 'Code';
+  if (['auto', 'unknown', 'plaintext', 'none', ''].includes(finalLang.toLowerCase())) {
+    finalLang = 'Code';
+  } else {
+    finalLang = formatLanguageName(finalLang);
+  }
 
   // Deduplication check: if same user saved the exact same code in the last 10 seconds, do not insert duplicate
   const recentDuplicate = db.prepare(`
@@ -826,17 +933,9 @@ function saveExtractionHistory(email, extractedCode, language = 'auto', customNa
     };
   }
 
-  // Syntax verification: ensure Python code is never mislabeled as PHP or auto
-  if (!language || language === 'auto' || language === 'php' || language === 'plaintext' || language === 'unknown') {
-    const syntaxLang = detectCodeLanguage(extractedCode);
-    if (syntaxLang && syntaxLang !== 'plaintext') {
-      language = syntaxLang;
-    }
-  }
-
   const name = (customName && customName.trim())
     ? customName.trim()
-    : generateStandardHistoryName(language, now, batchCount);
+    : generateStandardHistoryName(finalLang, now, batchCount);
 
   let info;
   try {
@@ -920,9 +1019,9 @@ function authenticate(req, _res, next) {
 }
 
 /* ─── GET /api/anon/status ───────────────────────────────────────────────── */
-app.get('/api/anon/status', (req, res) => {
+app.get('/api/anon/status', async (req, res) => {
   const ip = getClientIp(req);
-  res.json(getAnonUsage(ip));
+  res.json(await getAnonUsage(ip));
 });
 
 /* ─── POST /api/feedback ─────────────────────────────────────────────────── */
@@ -1080,7 +1179,8 @@ app.post('/api/auth/register', async (req, res) => {
   if (password.length < 8)
     return res.status(400).json({ error: 'Password must be at least 8 characters.' });
 
-  if (getUser(emailClean))
+  const existing = await getUser(emailClean);
+  if (existing)
     return res.status(409).json({ error: 'An account with this email already exists — sign in instead.' });
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -1089,15 +1189,17 @@ app.post('/api/auth/register', async (req, res) => {
   const newUser = {
     email: emailClean,
     passwordHash,
-    createdAt:     now,
-    windowStart:   now,
-    countInWindow: 0,
+    createdAt:        now,
+    windowStart:      now,
+    countInWindow:    0,
+    totalExtractions: 0,
+    hasRated:         0,
   };
-  saveUser(newUser);
+  await saveUser(newUser);
 
   const token = jwt.sign({ email: emailClean }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
-  console.log(`[Auth] Registered: ${emailClean}`);
-  res.json({ token, email: emailClean, remaining: AUTH_LIMIT, limit: AUTH_LIMIT });
+  console.log(`[Auth] Registered: ${emailClean} (storage: ${isTursoActive ? 'turso' : 'sqlite'})`);
+  res.json({ token, email: emailClean, remaining: AUTH_LIMIT, limit: AUTH_LIMIT, isPersistent: isTursoActive });
 });
 
 /* ─── POST /api/auth/login ───────────────────────────────────────────────── */
@@ -1108,9 +1210,9 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password are required.' });
 
   const emailClean = (email || '').toLowerCase().trim();
-  const user = getUser(emailClean);
+  const user = await getUser(emailClean);
 
-  console.log(`[Auth] Login attempt for [${emailClean}] — found: ${user ? 'yes' : 'no'}`);
+  console.log(`[Auth] Login attempt for [${emailClean}] — found: ${user ? 'yes' : 'no'} (storage: ${isTursoActive ? 'turso' : 'sqlite'})`);
 
   if (!user)
     return res.status(401).json({ error: 'No account found with this email.' });
@@ -1119,34 +1221,35 @@ app.post('/api/auth/login', async (req, res) => {
   if (!valid)
     return res.status(401).json({ error: 'Incorrect password. Please try again.' });
 
-  refreshWindow(user);
-  saveUser(user);
+  await refreshWindow(user);
+  await saveUser(user);
 
   const remaining = getRemaining(user);
   const token = jwt.sign({ email: emailClean }, JWT_SECRET, { expiresIn: JWT_EXPIRY });
   console.log(`[Auth] Login: ${emailClean} — ${remaining} remaining today`);
   res.json({ token, email: emailClean, remaining, limit: AUTH_LIMIT,
-             resetAt: user.windowStart + WINDOW_MS });
+             resetAt: user.windowStart + WINDOW_MS, isPersistent: isTursoActive });
 });
 
 /* ─── GET /api/auth/me ───────────────────────────────────────────────────── */
-app.get('/api/auth/me', authenticate, (req, res) => {
+app.get('/api/auth/me', authenticate, async (req, res) => {
   if (!req.user)
     return res.status(401).json({ error: 'Please sign in to continue.' });
 
-  const user = getUser(req.user.email);
+  const user = await getUser(req.user.email);
   if (!user)
     return res.status(404).json({ error: 'Account not found. Please sign in again.' });
 
-  refreshWindow(user);
-  saveUser(user);
+  await refreshWindow(user);
+  await saveUser(user);
 
   const remaining = getRemaining(user);
   res.json({
-    email:    req.user.email,
+    email:        req.user.email,
     remaining,
-    limit:    AUTH_LIMIT,
-    resetAt:  user.windowStart + WINDOW_MS,
+    limit:        AUTH_LIMIT,
+    resetAt:      user.windowStart + WINDOW_MS,
+    isPersistent: isTursoActive,
   });
 });
 
@@ -1332,6 +1435,72 @@ async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs 
   return { res, data, endpoint: 'native' };
 }
 
+/* ─── Gemini Response Parser (Language & Code Extraction) ─────────────────── */
+function parseGeminiOutput(raw) {
+  if (!raw || typeof raw !== 'string') return { code: '', language: 'Code', ambiguities: [], noCode: true };
+  if (raw.includes('# NO_CODE_FOUND')) return { code: '', language: 'Code', ambiguities: [], noCode: true };
+
+  let text = raw;
+  let language = 'Code';
+
+  // 1. Check for # LANGUAGE: <lang> line on line 1 or top
+  const langMatch = text.match(/^[ \t]*#[ \t]*LANGUAGE:[ \t]*([^\r\n]+)/im);
+  if (langMatch) {
+    const rawLang = langMatch[1].trim().toLowerCase();
+    if (rawLang && !['unknown', 'auto', 'code', 'plaintext', 'none'].includes(rawLang)) {
+      language = formatLanguageName(rawLang);
+    }
+    // Remove the # LANGUAGE: line so the returned code is pure source code
+    text = text.replace(/^[ \t]*#[ \t]*LANGUAGE:[ \t]*[^\r\n]*\r?\n?/im, '');
+  } else {
+    // 2. Check if Gemini wrapped in markdown code fences with language identifier (e.g. ```python)
+    const fenceMatch = text.match(/^```([a-zA-Z0-9_+#-]+)/m);
+    if (fenceMatch) {
+      const rawLang = fenceMatch[1].trim().toLowerCase();
+      if (rawLang && !['unknown', 'auto', 'code', 'plaintext'].includes(rawLang)) {
+        language = formatLanguageName(rawLang);
+      }
+    }
+  }
+
+  // Strip code fences
+  text = text.replace(/^```[\w]*\n?/gm, '').replace(/^```\n?/gm, '');
+
+  // Extract ambiguity notes if present
+  const lines = text.split(/\r?\n/);
+  const ambiguities = [];
+  let ambigStartIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.startsWith('# AMBIGUOUS:')) {
+      if (ambigStartIdx === -1) ambigStartIdx = i;
+      ambiguities.push(trimmed.replace(/^#\s*AMBIGUOUS:\s*/, ''));
+    }
+  }
+
+  let code = ambigStartIdx > 0 ? lines.slice(0, ambigStartIdx).join('\n') : text;
+  code = code.replace(/\n+$/, '');
+
+  return { code, language: language || 'Code', ambiguities, noCode: !code.trim() };
+}
+
+/* ─── GET /warmup (Pre-warm Gemini connection & DNS cache) ─────────────────── */
+app.get('/warmup', async (_req, res) => {
+  const start = Date.now();
+  try {
+    const cred = await getGeminiToken();
+    const warmupBody = {
+      contents: [{ parts: [{ text: 'ping' }] }],
+      generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
+    };
+    const result = await tryNativeEndpoint('gemini-3.5-flash-lite', cred.token, cred.isBearer, warmupBody, 4000);
+    const durationMs = Date.now() - start;
+    return res.json({ status: 'warm', durationMs, httpStatus: result.res.status, isTurso: isTursoActive });
+  } catch (err) {
+    return res.json({ status: 'warmed_network', durationMs: Date.now() - start, note: err.message, isTurso: isTursoActive });
+  }
+});
+
 /* ─── POST /api/extract ──────────────────────────────────────────────────── */
 app.post('/api/extract', authenticate, async (req, res) => {
   const imageStartTime = Date.now();
@@ -1357,11 +1526,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
   /* ── 2. Auth-aware rate limiting (IP-based for anonymous, account-based for signed-in) ── */
   const clientIp = getClientIp(req);
   if (req.user) {
-    const user = getUser(req.user.email);
+    const user = await getUser(req.user.email);
     if (!user) {
       return res.status(401).json({ error: 'Account not found. Please sign in again.', code: 'AUTH_REQUIRED' });
     }
-    refreshWindow(user);
+    await refreshWindow(user);
     if (user.countInWindow >= AUTH_LIMIT) {
       const resetIn = Math.ceil((user.windowStart + WINDOW_MS - Date.now()) / 60000);
       return res.status(429).json({
@@ -1371,8 +1540,8 @@ app.post('/api/extract', authenticate, async (req, res) => {
       });
     }
   } else {
-    // Anonymous users: server-side IP tracking in SQLite
-    const anonUsage = getAnonUsage(clientIp);
+    // Anonymous users: server-side IP tracking
+    const anonUsage = await getAnonUsage(clientIp);
     if (anonUsage.count >= ANON_LIMIT) {
       return res.status(429).json({
         error: `You’ve reached the limit of ${ANON_LIMIT} free extractions without an account. Please sign in or create a free account for 50 extractions per day.`,
@@ -1417,7 +1586,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   for (const model of GEMINI_MODELS) {
     const elapsedBeforeModel = Date.now() - imageStartTime;
     if (elapsedBeforeModel >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
-      console.warn(`[CodeSnapper] ⏱ Image reached 15s total limit (${elapsedBeforeModel}ms). Skipping further model attempts.`);
+      console.warn(`[CodeSnapper] ⏱ Image reached 20s total limit (${elapsedBeforeModel}ms). Skipping further model attempts.`);
       totalTimeoutExceeded = true;
       break;
     }
@@ -1447,38 +1616,37 @@ app.post('/api/extract', authenticate, async (req, res) => {
           }
           if (!text) { continue; }
 
+          /* ── Parse language & clean code directly from Gemini response ── */
+          const parsed = parseGeminiOutput(text);
+
           /* ── Record API success and timing ── */
           const totalDurationMs = Date.now() - imageStartTime;
           _lastSuccessfulApiCall = new Date().toISOString();
           _totalSuccessfulCalls++;
-          console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}]`);
+          console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}] | Language: "${parsed.language}"`);
 
           /* ── Increment usage counter ── */
           let remaining = null;
           let shouldPromptRating = false;
           let totalExtractions = 0;
           if (req.user) {
-            const user = getUser(req.user.email);
+            const user = await getUser(req.user.email);
             if (user) {
-              refreshWindow(user);
+              await refreshWindow(user);
               user.countInWindow = (user.countInWindow || 0) + 1;
-              saveUser(user);
+              user.totalExtractions = (user.totalExtractions || 0) + 1;
+              await saveUser(user);
               remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
-            }
-            db.prepare('UPDATE users SET total_extractions = COALESCE(total_extractions, 0) + 1 WHERE LOWER(email) = LOWER(?)').run(req.user.email);
-            const userRow = db.prepare('SELECT total_extractions, has_rated FROM users WHERE LOWER(email) = LOWER(?)').get(req.user.email);
-            if (userRow) {
-              totalExtractions = userRow.total_extractions || 0;
-              if (totalExtractions === 30 && !userRow.has_rated) {
+              totalExtractions = user.totalExtractions;
+              if (totalExtractions === 30 && !user.hasRated) {
                 shouldPromptRating = true;
               }
             }
-            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
+            return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint, remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
           } else {
-            // Anonymous IP tracking in SQLite
-            const newAnon = incAnonUsage(clientIp);
+            const newAnon = await incAnonUsage(clientIp);
             remaining = newAnon.remaining;
-            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs });
+            return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint, remaining, durationMs: totalDurationMs });
           }
         }
 
@@ -1505,34 +1673,32 @@ app.post('/api/extract', authenticate, async (req, res) => {
             if (fallbackRes.res.ok) {
               const text = fallbackRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
               if (text) {
+                const parsed = parseGeminiOutput(text);
                 const totalDurationMs = Date.now() - imageStartTime;
                 _lastSuccessfulApiCall = new Date().toISOString();
                 _totalSuccessfulCalls++;
-                console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [fallback native/${model}]`);
+                console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms [fallback native/${model}] | Language: "${parsed.language}"`);
                 let remaining = null;
                 let shouldPromptRating = false;
                 let totalExtractions = 0;
                 if (req.user) {
-                  const user = getUser(req.user.email);
+                  const user = await getUser(req.user.email);
                   if (user) {
-                    refreshWindow(user);
+                    await refreshWindow(user);
                     user.countInWindow = (user.countInWindow || 0) + 1;
-                    saveUser(user);
+                    user.totalExtractions = (user.totalExtractions || 0) + 1;
+                    await saveUser(user);
                     remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
-                  }
-                  db.prepare('UPDATE users SET total_extractions = COALESCE(total_extractions, 0) + 1 WHERE LOWER(email) = LOWER(?)').run(req.user.email);
-                  const userRow = db.prepare('SELECT total_extractions, has_rated FROM users WHERE LOWER(email) = LOWER(?)').get(req.user.email);
-                  if (userRow) {
-                    totalExtractions = userRow.total_extractions || 0;
-                    if (totalExtractions === 30 && !userRow.has_rated) {
+                    totalExtractions = user.totalExtractions;
+                    if (totalExtractions === 30 && !user.hasRated) {
                       shouldPromptRating = true;
                     }
                   }
-                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
+                  return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
                 } else {
-                  const newAnon = incAnonUsage(clientIp);
+                  const newAnon = await incAnonUsage(clientIp);
                   remaining = newAnon.remaining;
-                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs });
+                  return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs });
                 }
               }
             }
@@ -1603,6 +1769,8 @@ app.get(['/health', '/api/health'], (_req, res) => {
   res.json({
     auth: isAuthOk ? 'ok' : 'failed',
     method: _isServiceAccountActive ? 'service-account' : (_cachedToken ? 'api-key' : 'none'),
+    database: isTursoActive ? 'turso-persistent' : 'sqlite-local',
+    isPersistent: isTursoActive,
     lastSuccess: _lastSuccessfulApiCall,
     totalSuccess: _totalSuccessfulCalls,
     credentialPrefix: _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none',

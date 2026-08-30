@@ -2159,23 +2159,48 @@ async function callGemini(dataURL) {
 
   const text = data?.result;
   if (!text) throw new Error('No code content was returned. Please try again.');
-  return text;
+  return {
+    text,
+    language: data?.language || 'Code',
+    ambiguities: data?.ambiguities || [],
+    raw: data?.raw || text
+  };
 }
 
 /* ═══════════════════════════════════════════════
    RESPONSE PARSING
 ═══════════════════════════════════════════════ */
 function parseResponse(raw) {
-  // Check for no-code marker
+  if (!raw || typeof raw !== 'string') return { code: '', language: 'Code', ambiguities: [], noCode: true };
   if (raw.trim() === '# NO_CODE_FOUND') {
-    return { code: '', ambiguities: [], noCode: true };
+    return { code: '', language: 'Code', ambiguities: [], noCode: true };
   }
 
-  // Remove any leading/trailing markdown fences Gemini might add anyway
-  let text = raw.replace(/^```[\w]*\n?/gm, '').replace(/^```\n?/gm, '');
+  let text = raw;
+  let language = 'Code';
+
+  // 1. Extract # LANGUAGE: <lang>
+  const langMatch = text.match(/^[ \t]*#[ \t]*LANGUAGE:[ \t]*([^\r\n]+)/im);
+  if (langMatch) {
+    const rawLang = langMatch[1].trim();
+    if (rawLang && !['unknown', 'auto', 'code', 'plaintext', 'none'].includes(rawLang.toLowerCase())) {
+      language = rawLang;
+    }
+    text = text.replace(/^[ \t]*#[ \t]*LANGUAGE:[ \t]*[^\r\n]*\r?\n?/im, '');
+  } else {
+    const fenceMatch = text.match(/^```([a-zA-Z0-9_+#-]+)/m);
+    if (fenceMatch) {
+      const rawLang = fenceMatch[1].trim();
+      if (rawLang && !['unknown', 'auto', 'code', 'plaintext'].includes(rawLang.toLowerCase())) {
+        language = rawLang;
+      }
+    }
+  }
+
+  // Remove any leading/trailing markdown fences
+  text = text.replace(/^```[\w]*\n?/gm, '').replace(/^```\n?/gm, '');
 
   // Split on AMBIGUOUS lines
-  const ambigRegex = /^#\s*AMBIGUOUS:.+$/gm;
   const ambiguities = [];
   let ambigStartIdx = -1;
 
@@ -2194,143 +2219,33 @@ function parseResponse(raw) {
   // Strip trailing blank lines after code
   code = code.replace(/\n+$/, '');
 
-  return { code, ambiguities, noCode: false };
+  return { code, language: language || 'Code', ambiguities, noCode: !code.trim() };
 }
 
 /* ═══════════════════════════════════════════════
-   SYNTAX ANALYSIS & LANGUAGE DETECTION ENGINE
-   Priority Order:
-   1. Gemini output language fence (if present)
-   2. Python colons + indentation, def, import, print, elif, self
-   3. JavaScript / TypeScript const/let/=>, function, console.log
-   4. HTML / XML <!DOCTYPE, tags
-   5. CSS / SCSS {property: value}
-   6. Java / C# / C++ / SQL / Bash
-   7. Fallback to highlightAuto (excluding PHP unless PHP markers exist)
+   LANGUAGE IDENTIFICATION & HIGHLIGHTING
+   Directly uses Gemini's identified language.
+   Defaults strictly to "Code" if language is absent.
+   Client-side guessing regexes are completely disabled.
 ═══════════════════════════════════════════════ */
-function detectCodeLanguage(code, rawGemini = '') {
-  if (!code || typeof code !== 'string') return 'plaintext';
-  const clean = code.trim();
-  if (!clean) return 'plaintext';
+function highlightCode(code, languageFromGemini = 'Code') {
+  if (!code) return { html: '', lang: 'Code' };
 
-  // 1. If Gemini explicitly tagged language in markdown fence (e.g. ```python)
-  if (rawGemini && typeof rawGemini === 'string') {
-    const fenceMatch = rawGemini.match(/```([a-zA-Z0-9_+#-]+)/);
-    if (fenceMatch) {
-      const tag = fenceMatch[1].toLowerCase().trim();
-      const FENCE_MAP = {
-        py: 'python', python: 'python',
-        js: 'javascript', javascript: 'javascript', jsx: 'javascript',
-        ts: 'typescript', typescript: 'typescript', tsx: 'typescript',
-        html: 'html', xml: 'xml',
-        css: 'css', scss: 'scss', sass: 'scss',
-        java: 'java',
-        c: 'c', cpp: 'cpp', 'c++': 'cpp',
-        cs: 'csharp', csharp: 'csharp', 'c#': 'csharp',
-        php: 'php',
-        rb: 'ruby', ruby: 'ruby',
-        go: 'go', golang: 'go',
-        rs: 'rust', rust: 'rust',
-        sql: 'sql',
-        sh: 'bash', bash: 'bash', zsh: 'bash', shell: 'bash',
-        json: 'json', yml: 'yaml', yaml: 'yaml',
-        kt: 'kotlin', kotlin: 'kotlin',
-        swift: 'swift',
-        dart: 'dart',
-        r: 'r'
-      };
-      if (FENCE_MAP[tag]) {
-        return FENCE_MAP[tag];
-      }
-    }
+  let lang = (languageFromGemini && typeof languageFromGemini === 'string')
+    ? languageFromGemini.trim()
+    : 'Code';
+
+  if (['auto', 'unknown', 'plaintext', 'none', ''].includes(lang.toLowerCase())) {
+    lang = 'Code';
   }
 
-  // 2. Syntax Analysis Priority 1: PYTHON
-  // Check Python keywords, colons + indentation, and lack of PHP/C syntax
-  const hasPhpTags = /<\?php|\b\$_GET\b|\b\$_POST\b|\b\$_SERVER\b|\b\$_SESSION\b|->|echo\s+\$/.test(clean);
-  const hasPythonColonBlock = /(?:^|\n)\s*(?:def\s+\w+\s*\(|class\s+\w+.*:|if\s+.+:|elif\s+.+:|else\s*:|for\s+\w+(?:,\s*\w+)*\s+in\s+.+:|while\s+.+:|try\s*:|except(?:\s+[\w\s,]+)?(?:\s+as\s+\w+)?:|finally\s*:|with\s+.+\s+as\s+\w+:)\s*(?:\n\s+.*)/i.test(clean);
-  const hasPythonKeywords = /\b(def\s+\w+\s*\(|import\s+[\w.]+|from\s+[\w.]+\s+import|elif\s+|self\b|__init__|__name__|__main__|lambda\s+\w+:|yield\b|pass\b|raise\s+\w+)/.test(clean);
-  const hasPythonPrint = /\bprint\s*\(/.test(clean);
-  const hasPythonTypes = /\b(None|True|False)\b/.test(clean);
-
-  if (!hasPhpTags && (hasPythonColonBlock || hasPythonKeywords || (hasPythonPrint && hasPythonTypes) || (hasPythonPrint && !/[;{}]/.test(clean)))) {
-    return 'python';
-  }
-
-  // 3. Syntax Analysis Priority 2: JAVASCRIPT / TYPESCRIPT
-  const hasJsKeywords = /\b(const\s+\w+|let\s+\w+|var\s+\w+|function\s*\w*\(|console\.(log|warn|error|info)\(|export\s+(default|const|let)|import\s+.*\s+from\s+['"]|require\s*\(['"]|=>)\b/.test(clean) || /=>\s*[{(\n]/.test(clean);
-  const hasTsKeywords = /\b(interface\s+\w+|type\s+\w+\s*=|:\s*(string|number|boolean|any|void)\b)/.test(clean);
-  if (hasTsKeywords && hasJsKeywords) return 'typescript';
-  if (hasJsKeywords) return 'javascript';
-
-  // 4. Syntax Analysis Priority 3: HTML / XML
-  if (/<!DOCTYPE\s+html/i.test(clean) || /<html[\s>]/i.test(clean) || (/<(div|span|p|a|ul|ol|li|table|form|button|input|header|footer|nav|section|article)[\s>]/i.test(clean) && /<\/\w+>/.test(clean))) {
-    return 'html';
-  }
-
-  // 5. Syntax Analysis Priority 4: CSS / SCSS
-  if (/[.#][\w-]+\s*\{[^}]*:(?!:)[^}]+\}/.test(clean) || /@(media|keyframes|import)\b/.test(clean) || (/\b(margin|padding|background|color|display|font-size|border-radius)\s*:\s*[^;]+;/i.test(clean) && !hasPythonColonBlock)) {
-    return 'css';
-  }
-
-  // 6. Syntax Analysis Priority 5: JAVA
-  if (/\b(public\s+class\s+\w+|public\s+static\s+void\s+main|System\.out\.print(ln)?\(|@Override\b)/.test(clean)) {
-    return 'java';
-  }
-
-  // 7. C# / C++ / C
-  if (/\b(using\s+System(\.\w+)*;|namespace\s+\w+|Console\.WriteLine\()/.test(clean)) {
-    return 'csharp';
-  }
-  if (/#include\s*<[\w.]+>/.test(clean) || /\b(std::cout|std::cin|std::endl)\b/.test(clean)) {
-    return 'cpp';
-  }
-
-  // 8. SQL
-  if (/\b(SELECT\s+[\w*,\s]+\s+FROM\s+\w+|INSERT\s+INTO\s+\w+|UPDATE\s+\w+\s+SET|CREATE\s+TABLE\s+\w+|DELETE\s+FROM\s+\w+)\b/i.test(clean)) {
-    return 'sql';
-  }
-
-  // 9. PHP (STRICT check — only if actual PHP markers exist)
-  if (hasPhpTags || (/\$\w+\s*=/.test(clean) && /echo\b|function\b|return\b/.test(clean) && /[;{}]/.test(clean) && !hasPythonColonBlock)) {
-    return 'php';
-  }
-
-  // 10. Shell / Bash
-  if (/^#!\/(bin|usr)\/(bash|sh|zsh)/m.test(clean) || /\b(echo\s+['"].*['"]|chmod\s+[+0-9]|sudo\s+\w+|apt-get\s+|npm\s+(install|run)|git\s+(commit|push|pull|clone))\b/.test(clean)) {
-    return 'bash';
-  }
-
-  // 11. Fallback to highlight.js if available (excluding PHP if no PHP markers)
-  if (typeof hljs !== 'undefined' && hljs && hljs.highlightAuto) {
-    try {
-      const languages = [
-        'python','javascript','typescript','html','css','java','cpp','c','csharp',
-        'go','rust','ruby','swift','kotlin','bash','sql','r','dart','json','yaml','xml'
-      ];
-      if (hasPhpTags || /\$\w+/.test(clean)) {
-        languages.push('php');
-      }
-      const res = hljs.highlightAuto(clean, languages);
-      if (res && res.language) {
-        return res.language;
-      }
-    } catch {}
-  }
-
-  return 'plaintext';
-}
-
-function detectAndHighlight(code, raw = '') {
-  if (!code) return { html: '', lang: 'plaintext' };
-
-  const lang = detectCodeLanguage(code, raw);
   let html = escapeHtml(code);
 
   if (window.hljs) {
     try {
-      if (lang && lang !== 'plaintext' && hljs.getLanguage(lang)) {
-        html = hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+      const hljsLang = lang.toLowerCase();
+      if (lang !== 'Code' && hljs.getLanguage(hljsLang)) {
+        html = hljs.highlight(code, { language: hljsLang, ignoreIllegals: true }).value;
       } else {
         html = hljs.highlightAuto(code).value;
       }
@@ -2341,6 +2256,9 @@ function detectAndHighlight(code, raw = '') {
 
   return { html, lang };
 }
+
+// Backward-compatible alias
+const detectAndHighlight = highlightCode;
 
 function escapeHtml(t) {
   return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -2408,41 +2326,70 @@ async function runExtraction(croppedDataURL) {
       }
     }, 1200);
 
-    let raw;
-    try {
-      raw = await callGemini(croppedDataURL);
-    } catch (err) {
-      if (err.message.startsWith('DAILY_LIMIT:')) {
-        showPanel('crop-select');
-        showError(err.message.replace('DAILY_LIMIT:', ''));
-        return;
+    let extractResult;
+    let attempt = 0;
+
+    while (attempt < 2) {
+      attempt++;
+      try {
+        if (attempt > 1) {
+          els.procStatusText.textContent = 'Retrying…';
+        }
+        extractResult = await callGemini(croppedDataURL);
+        break; // Success!
+      } catch (err) {
+        const isTimeoutOrConn = err.name === 'AbortError' ||
+          err.message.includes('longer than expected') ||
+          err.message.includes('Unable to connect') ||
+          err.message.includes('temporarily unavailable') ||
+          err.message.includes('Failed to fetch') ||
+          err.message.includes('NetworkError');
+
+        if (attempt === 1 && isTimeoutOrConn) {
+          console.warn('[CodeSnapper] First attempt hit connection delay. Retrying silently in 2 seconds…');
+          if (statusTicker) clearInterval(statusTicker);
+          els.procStatusText.textContent = 'Retrying…';
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+
+        if (err.message.startsWith('DAILY_LIMIT:')) {
+          showPanel('crop-select');
+          showError(err.message.replace('DAILY_LIMIT:', ''));
+          return;
+        }
+        if (err.message === 'ANON_LIMIT_REACHED') {
+          showPanel('crop-select');
+          openAuthModal({ fromLimit: true });
+          return;
+        }
+        if (err.message === 'RATE_LIMIT') {
+          throw new Error('Our service is experiencing high demand right now. Please wait a few seconds and try again.');
+        }
+        if (err.message === 'SERVER_CONFIG_ERROR' || err.message === 'SERVER_KEY_ERROR') {
+          throw new Error('Something went wrong on our end. Please try again shortly.');
+        }
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError') {
+          throw new Error('Unable to connect to the service. Please check your internet connection and try again.');
+        }
+        throw new Error(formatErrorMessage(err));
       }
-      if (err.message === 'ANON_LIMIT_REACHED') {
-        showPanel('crop-select');
-        openAuthModal({ fromLimit: true });
-        return;
-      }
-      if (err.message === 'RATE_LIMIT') {
-        throw new Error('Our service is experiencing high demand right now. Please wait a few seconds and try again.');
-      }
-      if (err.message === 'SERVER_CONFIG_ERROR' || err.message === 'SERVER_KEY_ERROR') {
-        throw new Error('Something went wrong on our end. Please try again shortly.');
-      }
-      if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError') {
-        throw new Error('Unable to connect to the service. Please check your internet connection and try again.');
-      }
-      throw new Error(formatErrorMessage(err));
-    } finally {
-      if (statusTicker) clearInterval(statusTicker);
     }
+
+    if (statusTicker) clearInterval(statusTicker);
 
     setStep(2, true); setStep(3);
 
     // Step 3: Parse
     els.procStatusText.textContent = 'Parsing code structure & ambiguities…';
-    const parsed = parseResponse(raw);
+    const rawText = extractResult.raw || extractResult.text;
+    const parsed = parseResponse(rawText);
+    const resolvedCode = extractResult.text || parsed.code;
+    const resolvedLang = (extractResult.language && extractResult.language !== 'Code')
+      ? extractResult.language
+      : (parsed.language || 'Code');
 
-    if (parsed.noCode) {
+    if (parsed.noCode && !resolvedCode) {
       setStep(3, true); setStep(4);
       showPanel('crop-select');
       showError('No source code detected in this image. Please upload an image containing source code.', 'No Code Detected');
@@ -2450,10 +2397,10 @@ async function runExtraction(croppedDataURL) {
     }
 
     setStep(3, true); setStep(4);
-    els.procStatusText.textContent = 'Detecting language & highlighting syntax…';
+    els.procStatusText.textContent = 'Highlighting syntax…';
 
-    // Step 4: Highlight
-    const { html, lang } = detectAndHighlight(parsed.code, raw);
+    // Step 4: Highlight using Gemini's detected language directly
+    const { html, lang } = highlightCode(resolvedCode, resolvedLang);
     setStep(4, true);
 
     // Increment counter (anon in localStorage, signed-in synced with server)
@@ -2467,11 +2414,11 @@ async function runExtraction(croppedDataURL) {
       fetchUserUsage();
 
       // Save to extraction history exactly ONCE upon confirmed success
-      if (parsed.code) {
+      if (resolvedCode) {
         fetch('/api/history/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
-          body: JSON.stringify({ codeText: parsed.code, lang })
+          body: JSON.stringify({ codeText: resolvedCode, lang })
         }).then(r => r.json()).then(d => {
           if (d && d.entry) fetchHistory();
         }).catch(() => {});
@@ -2479,12 +2426,12 @@ async function runExtraction(croppedDataURL) {
     }
 
     // Show result
-    state.extractedCode = parsed.code;
+    state.extractedCode = resolvedCode;
     state.detectedLang  = lang;
-    state.ambiguities   = parsed.ambiguities;
-    state.rawResponse   = raw;
+    state.ambiguities   = extractResult.ambiguities || parsed.ambiguities;
+    state.rawResponse   = rawText;
 
-    displayResult(parsed.code, html, lang, parsed.ambiguities);
+    displayResult(resolvedCode, html, lang, state.ambiguities);
   } catch (err) {
     if (statusTicker) clearInterval(statusTicker);
     showPanel('crop-select');
@@ -2595,9 +2542,9 @@ async function runBatchExtraction() {
       els.procStatusText.textContent = `Processing image ${num} of ${total} · Vision AI`;
 
       // 2. Call Gemini API with automatic 1-time retry after 3s wait on failure
-      let raw;
+      let extractRes;
       try {
-        raw = await callGemini(croppedDataURL);
+        extractRes = await callGemini(croppedDataURL);
       } catch (firstErr) {
         if (firstErr.message.startsWith('DAILY_LIMIT:') || firstErr.message === 'ANON_LIMIT_REACHED') {
           throw firstErr;
@@ -2608,16 +2555,22 @@ async function runBatchExtraction() {
         await delay(3000);
         if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing source code (Retry)…';
         els.procStatusText.textContent = `Processing image ${num} of ${total} · Vision AI (Retry)`;
-        raw = await callGemini(croppedDataURL);
+        extractRes = await callGemini(croppedDataURL);
       }
 
       setStep(2, true); setStep(3);
-      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Detecting syntax & highlighting…';
+      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Highlighting syntax…';
       els.procStatusText.textContent = `Processing image ${num} of ${total} · Syntax Highlighting`;
 
       // 3. Parse Response
-      const parsed = parseResponse(raw);
-      if (parsed.noCode) {
+      const rawText = extractRes.raw || extractRes.text;
+      const parsed = parseResponse(rawText);
+      const resolvedCode = extractRes.text || parsed.code;
+      const resolvedLang = (extractRes.language && extractRes.language !== 'Code')
+        ? extractRes.language
+        : (parsed.language || 'Code');
+
+      if (parsed.noCode && !resolvedCode) {
         state.batchResults.push({
           id: item.id,
           name: item.name,
@@ -2629,11 +2582,11 @@ async function runBatchExtraction() {
           error: 'No source code was detected in this screenshot.',
           code: '',
           html: '',
-          lang: 'plaintext',
+          lang: 'Code',
           ambiguities: []
         });
       } else {
-        const { html, lang } = detectAndHighlight(parsed.code, raw);
+        const { html, lang } = highlightCode(resolvedCode, resolvedLang);
         state.batchResults.push({
           id: item.id,
           name: item.name,
@@ -2642,19 +2595,19 @@ async function runBatchExtraction() {
           dataURL: item.dataURL,
           croppedDataURL,
           success: true,
-          code: parsed.code,
+          code: resolvedCode,
           html,
           lang,
-          ambiguities: parsed.ambiguities,
-          raw
+          ambiguities: extractRes.ambiguities || parsed.ambiguities,
+          raw: rawText
         });
 
         // Save to history exactly ONCE per image in batch
-        if (state.authToken && parsed.code) {
+        if (state.authToken && resolvedCode) {
           fetch('/api/history/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
-            body: JSON.stringify({ codeText: parsed.code, lang, batchCount: total })
+            body: JSON.stringify({ codeText: resolvedCode, lang, batchCount: total })
           }).then(r => r.json()).then(d => {
             if (d && d.entry) fetchHistory();
           }).catch(() => {});
@@ -3732,6 +3685,8 @@ function init() {
   updateUserPill();
   showPanel('hero');
   checkServerConnection();
+  // Silently warm up the Gemini connection and backend DNS in the background on load
+  fetch('/warmup').catch(() => {});
   // Clear any report hash from URL on refresh so modal never auto-opens
   if (window.location.hash === '#report-issue' || window.location.hash === '#report') {
     history.replaceState(null, '', window.location.pathname + window.location.search);
