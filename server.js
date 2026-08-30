@@ -653,9 +653,139 @@ function cleanupDuplicateHistoryEntries() {
   }
 }
 
-// Run cleanup immediately on server start and once daily (every 24h)
+/* ─── Syntax Analysis & Language Detection Engine ─────────────────────── */
+function detectCodeLanguage(code, rawGemini = '') {
+  if (!code || typeof code !== 'string') return 'plaintext';
+  const clean = code.trim();
+  if (!clean) return 'plaintext';
+
+  // 1. If Gemini explicitly tagged language in markdown fence (e.g. ```python)
+  if (rawGemini && typeof rawGemini === 'string') {
+    const fenceMatch = rawGemini.match(/```([a-zA-Z0-9_+#-]+)/);
+    if (fenceMatch) {
+      const tag = fenceMatch[1].toLowerCase().trim();
+      const FENCE_MAP = {
+        py: 'python', python: 'python',
+        js: 'javascript', javascript: 'javascript', jsx: 'javascript',
+        ts: 'typescript', typescript: 'typescript', tsx: 'typescript',
+        html: 'html', xml: 'xml',
+        css: 'css', scss: 'scss', sass: 'scss',
+        java: 'java',
+        c: 'c', cpp: 'cpp', 'c++': 'cpp',
+        cs: 'csharp', csharp: 'csharp', 'c#': 'csharp',
+        php: 'php',
+        rb: 'ruby', ruby: 'ruby',
+        go: 'go', golang: 'go',
+        rs: 'rust', rust: 'rust',
+        sql: 'sql',
+        sh: 'bash', bash: 'bash', zsh: 'bash', shell: 'bash',
+        json: 'json', yml: 'yaml', yaml: 'yaml',
+        kt: 'kotlin', kotlin: 'kotlin',
+        swift: 'swift',
+        dart: 'dart',
+        r: 'r'
+      };
+      if (FENCE_MAP[tag]) {
+        return FENCE_MAP[tag];
+      }
+    }
+  }
+
+  // 2. Syntax Analysis Priority 1: PYTHON
+  // Check Python keywords, colons + indentation, and lack of PHP/C syntax
+  const hasPhpTags = /<\?php|\b\$_GET\b|\b\$_POST\b|\b\$_SERVER\b|\b\$_SESSION\b|->|echo\s+\$/.test(clean);
+  const hasPythonColonBlock = /(?:^|\n)\s*(?:def\s+\w+\s*\(|class\s+\w+.*:|if\s+.+:|elif\s+.+:|else\s*:|for\s+\w+(?:,\s*\w+)*\s+in\s+.+:|while\s+.+:|try\s*:|except(?:\s+[\w\s,]+)?(?:\s+as\s+\w+)?:|finally\s*:|with\s+.+\s+as\s+\w+:)\s*(?:\n\s+.*)/i.test(clean);
+  const hasPythonKeywords = /\b(def\s+\w+\s*\(|import\s+[\w.]+|from\s+[\w.]+\s+import|elif\s+|self\b|__init__|__name__|__main__|lambda\s+\w+:|yield\b|pass\b|raise\s+\w+)/.test(clean);
+  const hasPythonPrint = /\bprint\s*\(/.test(clean);
+  const hasPythonTypes = /\b(None|True|False)\b/.test(clean);
+
+  if (!hasPhpTags && (hasPythonColonBlock || hasPythonKeywords || (hasPythonPrint && hasPythonTypes) || (hasPythonPrint && !/[;{}]/.test(clean)))) {
+    return 'python';
+  }
+
+  // 3. Syntax Analysis Priority 2: JAVASCRIPT / TYPESCRIPT
+  const hasJsKeywords = /\b(const\s+\w+|let\s+\w+|var\s+\w+|function\s*\w*\(|console\.(log|warn|error|info)\(|export\s+(default|const|let)|import\s+.*\s+from\s+['"]|require\s*\(['"]|=>)\b/.test(clean) || /=>\s*[{(\n]/.test(clean);
+  const hasTsKeywords = /\b(interface\s+\w+|type\s+\w+\s*=|:\s*(string|number|boolean|any|void)\b)/.test(clean);
+  if (hasTsKeywords && hasJsKeywords) return 'typescript';
+  if (hasJsKeywords) return 'javascript';
+
+  // 4. Syntax Analysis Priority 3: HTML / XML
+  if (/<!DOCTYPE\s+html/i.test(clean) || /<html[\s>]/i.test(clean) || (/<(div|span|p|a|ul|ol|li|table|form|button|input|header|footer|nav|section|article)[\s>]/i.test(clean) && /<\/\w+>/.test(clean))) {
+    return 'html';
+  }
+
+  // 5. Syntax Analysis Priority 4: CSS / SCSS
+  if (/[.#][\w-]+\s*\{[^}]*:(?!:)[^}]+\}/.test(clean) || /@(media|keyframes|import)\b/.test(clean) || (/\b(margin|padding|background|color|display|font-size|border-radius)\s*:\s*[^;]+;/i.test(clean) && !hasPythonColonBlock)) {
+    return 'css';
+  }
+
+  // 6. Syntax Analysis Priority 5: JAVA
+  if (/\b(public\s+class\s+\w+|public\s+static\s+void\s+main|System\.out\.print(ln)?\(|@Override\b)/.test(clean)) {
+    return 'java';
+  }
+
+  // 7. C# / C++ / C
+  if (/\b(using\s+System(\.\w+)*;|namespace\s+\w+|Console\.WriteLine\()/.test(clean)) {
+    return 'csharp';
+  }
+  if (/#include\s*<[\w.]+>/.test(clean) || /\b(std::cout|std::cin|std::endl)\b/.test(clean)) {
+    return 'cpp';
+  }
+
+  // 8. SQL
+  if (/\b(SELECT\s+[\w*,\s]+\s+FROM\s+\w+|INSERT\s+INTO\s+\w+|UPDATE\s+\w+\s+SET|CREATE\s+TABLE\s+\w+|DELETE\s+FROM\s+\w+)\b/i.test(clean)) {
+    return 'sql';
+  }
+
+  // 9. PHP (STRICT check — only if actual PHP markers exist)
+  if (hasPhpTags || (/\$\w+\s*=/.test(clean) && /echo\b|function\b|return\b/.test(clean) && /[;{}]/.test(clean) && !hasPythonColonBlock)) {
+    return 'php';
+  }
+
+  // 10. Shell / Bash
+  if (/^#!\/(bin|usr)\/(bash|sh|zsh)/m.test(clean) || /\b(echo\s+['"].*['"]|chmod\s+[+0-9]|sudo\s+\w+|apt-get\s+|npm\s+(install|run)|git\s+(commit|push|pull|clone))\b/.test(clean)) {
+    return 'bash';
+  }
+
+  return 'plaintext';
+}
+
+/* ─── Re-label History Languages Migration ───────────────────────────────── */
+function relabelHistoryLanguages() {
+  try {
+    const rows = db.prepare('SELECT id, custom_name, extracted_code, language, created_at FROM extraction_history').all();
+    let updatedCount = 0;
+    const updateStmt = db.prepare('UPDATE extraction_history SET language = ?, custom_name = ? WHERE id = ?');
+
+    for (const row of rows) {
+      if (!row.extracted_code) continue;
+      const detected = detectCodeLanguage(row.extracted_code);
+      const isWrongPhp = (row.language === 'php' && detected !== 'php');
+      const isUnresolved = (row.language === 'auto' || row.language === 'unknown' || row.language === 'plaintext');
+      const isPythonMismatch = (detected === 'python' && row.language !== 'python');
+
+      if ((isWrongPhp || isUnresolved || isPythonMismatch) && detected !== 'plaintext') {
+        const isBatch = row.custom_name && row.custom_name.startsWith('Batch ');
+        let newName = row.custom_name;
+        if (!isBatch && (!row.custom_name || row.custom_name.startsWith('PHP ·') || row.custom_name.startsWith('Code ·') || row.custom_name.startsWith('Unknown ·'))) {
+          newName = generateStandardHistoryName(detected, row.created_at);
+        }
+        updateStmt.run(detected, newName, row.id);
+        updatedCount++;
+      }
+    }
+    if (updatedCount > 0) {
+      console.log(`[Language Relabel] Corrected ${updatedCount} history entries with accurate syntax analysis`);
+    }
+  } catch (err) {
+    console.warn('[Language Relabel] Note:', err.message);
+  }
+}
+
+// Run cleanups & migrations immediately on server start and once daily (every 24h)
 cleanupExpiredHistory();
 cleanupDuplicateHistoryEntries();
+relabelHistoryLanguages();
 setInterval(cleanupExpiredHistory, 24 * 60 * 60 * 1000);
 
 // Add unique constraint on (user_email, created_at) in database
@@ -694,6 +824,14 @@ function saveExtractionHistory(email, extractedCode, language = 'auto', customNa
       expires_at: recentDuplicate.expires_at,
       duplicate: true,
     };
+  }
+
+  // Syntax verification: ensure Python code is never mislabeled as PHP or auto
+  if (!language || language === 'auto' || language === 'php' || language === 'plaintext' || language === 'unknown') {
+    const syntaxLang = detectCodeLanguage(extractedCode);
+    if (syntaxLang && syntaxLang !== 'plaintext') {
+      language = syntaxLang;
+    }
   }
 
   const name = (customName && customName.trim())
@@ -745,6 +883,7 @@ function saveExtractionHistory(email, extractedCode, language = 'auto', customNa
 
 function getExtractionHistory(email) {
   cleanupExpiredHistory();
+  relabelHistoryLanguages();
   const emailClean = (email || '').toLowerCase().trim();
   const rows = db.prepare(`
     SELECT id, custom_name, extracted_code, language, created_at, expires_at
