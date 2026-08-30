@@ -3758,26 +3758,31 @@ function init() {
   if (state.authToken) {
     refreshAuthState().then(updateUserPill);
   }
+
+  // Ensure error modal and feedback modals are strictly closed on initial page load
+  closeModal(els.errorModal);
+  closeModal(els.feedbackModal);
+
   console.log('%c CodeSnapper loaded ❖', 'color:#a78bfa;font-weight:bold;font-size:16px');
 }
 
 /* ═══════════════════════════════════════════════
-   GLOBAL UNHANDLED ERROR CATCH-ALL
+   GLOBAL UNHANDLED ERROR CATCH-ALL (Console logging only — never auto-show modal on page load)
 ═══════════════════════════════════════════════ */
 window.addEventListener('error', (event) => {
   console.error('[CodeSnapper] Unhandled error:', event.error || event.message);
   if (state.panel === 'processing') {
     showPanel(state.isBatch ? 'batch-preview' : 'crop-select');
+    showError('Extraction failed — please try again');
   }
-  showError('Something went wrong. Please try again.');
 });
 
 window.addEventListener('unhandledrejection', (event) => {
   console.error('[CodeSnapper] Unhandled rejection:', event.reason);
   if (state.panel === 'processing') {
     showPanel(state.isBatch ? 'batch-preview' : 'crop-select');
+    showError('Extraction failed — please try again');
   }
-  showError('Something went wrong. Please try again.');
 });
 
 document.addEventListener('DOMContentLoaded', init);
