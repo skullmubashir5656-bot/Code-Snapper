@@ -967,10 +967,11 @@ function saveExtractionHistory(email, extractedCode, language = 'Code', customNa
     )
   `).run(emailClean, emailClean, MAX_HISTORY_PER_USER);
 
-  console.log(`[History] History saved for [${emailClean}] (entry #${info.lastInsertRowid})`);
+  const insertId = Number(info.lastInsertRowid);
+  console.log(`[History] History saved for [${emailClean}] (entry #${insertId})`);
 
   return {
-    id: info.lastInsertRowid,
+    id: insertId,
     user_email: emailClean,
     custom_name: name,
     extracted_code: extractedCode,
@@ -1025,7 +1026,7 @@ app.get('/api/anon/status', async (req, res) => {
 });
 
 /* ─── POST /api/feedback ─────────────────────────────────────────────────── */
-app.post('/api/feedback', authenticate, (req, res) => {
+app.post('/api/feedback', authenticate, async (req, res) => {
   try {
     const { type, description, page } = req.body || {};
     if (!type || typeof type !== 'string') {
@@ -1039,17 +1040,27 @@ app.post('/api/feedback', authenticate, (req, res) => {
     const pageClean = (page || 'index.html').trim().slice(0, 100);
     const now = new Date().toISOString();
 
-    const stmt = db.prepare(`
-      INSERT INTO feedback (type, description, timestamp, user_email, page)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    const result = stmt.run(issueType, descClean, now, userEmail, pageClean);
+    let newId;
+    if (authClient) {
+      const result = await authClient.execute({
+        sql: 'INSERT INTO feedback (type, description, timestamp, user_email, page) VALUES (?, ?, ?, ?, ?)',
+        args: [issueType, descClean, now, userEmail, pageClean]
+      });
+      newId = Number(result.lastInsertRowid || 0);
+    } else {
+      const stmt = db.prepare(`
+        INSERT INTO feedback (type, description, timestamp, user_email, page)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const result = stmt.run(issueType, descClean, now, userEmail, pageClean);
+      newId = Number(result.lastInsertRowid || 0);
+    }
 
-    console.log(`[Feedback] New report #${result.lastInsertRowid}: [${issueType}] by ${userEmail || 'Anonymous'}`);
-    res.json({ ok: true, id: result.lastInsertRowid });
+    console.log(`[Feedback] ✓ New report #${newId}: [${issueType}] by ${userEmail || 'Anonymous'} (page: ${pageClean})`);
+    res.json({ ok: true, id: newId });
   } catch (err) {
-    console.error('[Feedback] Error saving feedback:', err.message);
-    res.status(500).json({ error: 'Failed to submit report. Please try again.' });
+    console.error('[Feedback] ✗ Critical error saving feedback report:', err.message, err.stack);
+    res.status(500).json({ error: `Failed to save feedback report: ${err.message}` });
   }
 });
 
@@ -1083,33 +1094,57 @@ app.post('/api/admin/login', (req, res) => {
 });
 
 /* ─── GET /api/admin/feedback ────────────────────────────────────────────── */
-app.get('/api/admin/feedback', (req, res) => {
+app.get('/api/admin/feedback', async (req, res) => {
   if (!verifyAdminAuth(req)) {
     return res.status(401).json({ error: 'Admin authentication required.' });
   }
-  const rows = db.prepare(`
-    SELECT * FROM feedback
-    ORDER BY id DESC
-  `).all();
-  res.json({ feedback: rows });
+  try {
+    let rows = [];
+    if (authClient) {
+      const result = await authClient.execute('SELECT * FROM feedback ORDER BY id DESC');
+      rows = result.rows || [];
+    } else {
+      rows = db.prepare('SELECT * FROM feedback ORDER BY id DESC').all();
+    }
+    res.json({ feedback: rows });
+  } catch (err) {
+    console.error('[Admin] Error fetching feedback:', err.message);
+    res.status(500).json({ error: 'Failed to fetch feedback reports.' });
+  }
 });
 
 /* ─── DELETE /api/admin/feedback/:id ─────────────────────────────────────── */
-app.delete('/api/admin/feedback/:id', (req, res) => {
+app.delete('/api/admin/feedback/:id', async (req, res) => {
   if (!verifyAdminAuth(req)) {
     return res.status(401).json({ error: 'Admin authentication required.' });
   }
-  db.prepare('DELETE FROM feedback WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+  try {
+    if (authClient) {
+      await authClient.execute({ sql: 'DELETE FROM feedback WHERE id = ?', args: [req.params.id] });
+    } else {
+      db.prepare('DELETE FROM feedback WHERE id = ?').run(req.params.id);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ─── POST /api/admin/feedback/clear ─────────────────────────────────────── */
-app.post('/api/admin/feedback/clear', (req, res) => {
+app.post('/api/admin/feedback/clear', async (req, res) => {
   if (!verifyAdminAuth(req)) {
     return res.status(401).json({ error: 'Admin authentication required.' });
   }
-  db.prepare('DELETE FROM feedback').run();
-  res.json({ ok: true });
+  try {
+    if (authClient) {
+      await authClient.execute('DELETE FROM feedback');
+    } else {
+      db.prepare('DELETE FROM feedback').run();
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ─── POST /api/rate (Submit rating after 30th extraction) ───────────────── */
@@ -1501,9 +1536,31 @@ app.get('/warmup', async (_req, res) => {
   }
 });
 
+/* ─── Server-side Request Queue (Serializes extraction requests arriving < 1s apart) ── */
+let _extractQueue = Promise.resolve();
+let _lastExtractTime = 0;
+
+function queueExtract(fn) {
+  const currentTask = _extractQueue.then(async () => {
+    const now = Date.now();
+    const gap = now - _lastExtractTime;
+    if (_lastExtractTime > 0 && gap < 1000) {
+      const waitMs = 1000 - gap;
+      console.log(`[Queue] Pacing extraction request — pausing ${waitMs}ms to avoid concurrency collision`);
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+    _lastExtractTime = Date.now();
+    return fn();
+  });
+  // Keep queue chain going even if a request throws
+  _extractQueue = currentTask.catch(() => {});
+  return currentTask;
+}
+
 /* ─── POST /api/extract ──────────────────────────────────────────────────── */
 app.post('/api/extract', authenticate, async (req, res) => {
-  const imageStartTime = Date.now();
+  return queueExtract(async () => {
+    const imageStartTime = Date.now();
 
   /* ── 1. Get a fresh Gemini token (auto-refreshed for service accounts) ── */
   let cred;
@@ -1760,6 +1817,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   return res.status(502).json({
     error: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.',
     code:  'ALL_MODELS_FAILED',
+  });
   });
 });
 

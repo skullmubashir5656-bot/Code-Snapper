@@ -731,7 +731,12 @@
         <textarea id="feedback-desc" class="input" rows="4" maxlength="500" placeholder="e.g., Python indentation was missing on line 4, or semicolon misread as colon..." style="resize:vertical;min-height:90px;font-family:inherit;font-size:13.5px;line-height:1.5"></textarea>
       </div>
 
-      <div class="modal-actions" style="margin-top:20px">
+      <div id="feedback-error-container" class="hidden" style="margin-top:12px;padding:10px 14px;border-radius:var(--r-md);background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:13px;display:none;align-items:center;justify-content:space-between;gap:8px">
+        <span id="feedback-error-text">Couldn't submit report — please try again.</span>
+        <button type="button" class="btn btn-ghost" id="feedback-retry-btn" style="min-height:30px;padding:4px 10px;font-size:12px;color:#fff;border-color:rgba(239,68,68,0.4)">Retry</button>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px">
         <button type="submit" class="btn btn-primary" id="feedback-submit-btn">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           Submit Report

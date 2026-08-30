@@ -2307,6 +2307,10 @@ async function runExtraction(croppedDataURL) {
     els.procStatusText.textContent = 'Preparing & encoding image…';
     setStep(1, true); setStep(2);
 
+    // Deliberate 1.5s pause with "Preparing..." to allow background warmup confirmation
+    els.procStatusText.textContent = 'Preparing…';
+    await new Promise(r => setTimeout(r, 1500));
+
     // Step 2: server-side extraction call with active status updates
     els.procStatusText.textContent = 'Transcribing code with Vision AI…';
 
@@ -2318,22 +2322,20 @@ async function runExtraction(croppedDataURL) {
     ];
     let updateIdx = 0;
     statusTicker = setInterval(() => {
-      const elapsed = Date.now() - extractStartTime;
-      if (elapsed > 4000 && updateIdx === 0) {
-        els.procStatusText.textContent = 'Warming up... please wait a moment';
-      } else if (updateIdx < statusUpdates.length) {
+      if (updateIdx < statusUpdates.length) {
         els.procStatusText.textContent = statusUpdates[updateIdx++];
       }
-    }, 1200);
+    }, 1500);
 
     let extractResult;
     let attempt = 0;
+    const MAX_RETRIES = 3; // Initial attempt + 3 retries (4 total attempts)
 
-    while (attempt < 2) {
+    while (attempt <= MAX_RETRIES) {
       attempt++;
       try {
         if (attempt > 1) {
-          els.procStatusText.textContent = 'Retrying…';
+          els.procStatusText.textContent = `Retrying… (attempt ${attempt - 1} of ${MAX_RETRIES})`;
         }
         extractResult = await callGemini(croppedDataURL);
         break; // Success!
@@ -2343,16 +2345,18 @@ async function runExtraction(croppedDataURL) {
           err.message.includes('Unable to connect') ||
           err.message.includes('temporarily unavailable') ||
           err.message.includes('Failed to fetch') ||
-          err.message.includes('NetworkError');
+          err.message.includes('NetworkError') ||
+          err.message.includes('experiencing high demand');
 
-        if (attempt === 1 && isTimeoutOrConn) {
-          console.warn('[CodeSnapper] First attempt hit connection delay. Retrying silently in 2 seconds…');
+        if (attempt <= MAX_RETRIES && isTimeoutOrConn) {
+          console.warn(`[CodeSnapper] Attempt ${attempt} hit connection delay. Retrying silently in 2s…`);
           if (statusTicker) clearInterval(statusTicker);
-          els.procStatusText.textContent = 'Retrying…';
+          els.procStatusText.textContent = `Retrying…`;
           await new Promise(r => setTimeout(r, 2000));
           continue;
         }
 
+        // Terminal errors that should stop immediately
         if (err.message.startsWith('DAILY_LIMIT:')) {
           showPanel('crop-select');
           showError(err.message.replace('DAILY_LIMIT:', ''));
@@ -2363,16 +2367,12 @@ async function runExtraction(croppedDataURL) {
           openAuthModal({ fromLimit: true });
           return;
         }
-        if (err.message === 'RATE_LIMIT') {
-          throw new Error('Our service is experiencing high demand right now. Please wait a few seconds and try again.');
+
+        // Only throw after all retries fail
+        if (attempt > MAX_RETRIES) {
+          throw new Error(formatErrorMessage(err));
         }
-        if (err.message === 'SERVER_CONFIG_ERROR' || err.message === 'SERVER_KEY_ERROR') {
-          throw new Error('Something went wrong on our end. Please try again shortly.');
-        }
-        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.name === 'TypeError') {
-          throw new Error('Unable to connect to the service. Please check your internet connection and try again.');
-        }
-        throw new Error(formatErrorMessage(err));
+        throw err;
       }
     }
 
@@ -3520,22 +3520,70 @@ function openFeedbackModal() {
 function closeFeedbackModal() {
   if (!els.feedbackModal) return;
   closeModal(els.feedbackModal);
+  const errBox = document.getElementById('feedback-error-container');
+  if (errBox) errBox.style.display = 'none';
   if (window.location.hash) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
 }
 
-async function handleFeedbackSubmit(e) {
-  if (e) e.preventDefault();
-  const type = els.feedbackType ? els.feedbackType.value : 'Other';
-  const desc = els.feedbackDesc ? els.feedbackDesc.value.trim() : '';
+// Check and flush queued feedback from localStorage if network was previously offline
+async function syncOfflineFeedbackQueue() {
+  try {
+    const raw = localStorage.getItem('codesnapper_offline_feedback');
+    if (!raw) return;
+    const queued = JSON.parse(raw);
+    if (!Array.isArray(queued) || queued.length === 0) return;
 
-  if (els.feedbackSubmitBtn) {
-    els.feedbackSubmitBtn.disabled = true;
-    els.feedbackSubmitBtn.innerHTML = `
-      <div class="spinner" style="width:14px;height:14px;border-width:2px;margin:0 auto"></div>
-      Sending…`;
+    console.log(`[Feedback] Attempting to sync ${queued.length} queued offline feedback report(s)…`);
+    const remaining = [];
+    for (const item of queued) {
+      try {
+        const res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item)
+        });
+        if (!res.ok) remaining.push(item);
+      } catch {
+        remaining.push(item);
+      }
+    }
+    if (remaining.length > 0) {
+      localStorage.setItem('codesnapper_offline_feedback', JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem('codesnapper_offline_feedback');
+      console.log('[Feedback] ✓ All offline reports successfully synced to server');
+    }
+  } catch {}
+}
+
+async function handleFeedbackSubmit(e) {
+  if (e && typeof e.preventDefault === 'function') e.preventDefault();
+  const typeEl = els.feedbackType || document.getElementById('feedback-type');
+  const descEl = els.feedbackDesc || document.getElementById('feedback-desc');
+  const submitBtn = els.feedbackSubmitBtn || document.getElementById('feedback-submit-btn');
+  const errBox = document.getElementById('feedback-error-container');
+  const errText = document.getElementById('feedback-error-text');
+  const retryBtn = document.getElementById('feedback-retry-btn');
+
+  const type = typeEl ? typeEl.value : 'Other';
+  const desc = descEl ? descEl.value.trim() : '';
+
+  if (errBox) errBox.style.display = 'none';
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `
+      <div class="spinner" style="width:14px;height:14px;border-width:2px;margin:0 4px 0 0;display:inline-block;vertical-align:middle"></div>
+      Submitting…`;
   }
+
+  const payload = {
+    type,
+    description: desc,
+    page: window.location.pathname || 'index.html'
+  };
 
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -3546,24 +3594,38 @@ async function handleFeedbackSubmit(e) {
     const res = await fetch('/api/feedback', {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        type,
-        description: desc,
-        page: window.location.pathname || 'index.html'
-      })
+      body: JSON.stringify(payload)
     });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to submit report.');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Couldn't submit report — please try again");
 
     closeFeedbackModal();
+    if (descEl) descEl.value = '';
     showToast('Report submitted. Thank you for your feedback!', 'success');
   } catch (err) {
-    showToast(err.message || 'Could not send feedback. Please try again.', 'error');
+    console.error('[Feedback] Submission error:', err.message);
+
+    // Save to localStorage so report is never lost if server/network was temporarily down
+    try {
+      const existing = JSON.parse(localStorage.getItem('codesnapper_offline_feedback') || '[]');
+      existing.push(payload);
+      localStorage.setItem('codesnapper_offline_feedback', JSON.stringify(existing));
+    } catch {}
+
+    if (errBox) {
+      errBox.style.display = 'flex';
+      if (errText) errText.textContent = "Couldn't submit report — please try again";
+      if (retryBtn) {
+        retryBtn.onclick = () => handleFeedbackSubmit();
+      }
+    } else {
+      showToast("Couldn't submit report — please try again", 'error');
+    }
   } finally {
-    if (els.feedbackSubmitBtn) {
-      els.feedbackSubmitBtn.disabled = false;
-      els.feedbackSubmitBtn.innerHTML = `
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         Submit Report`;
     }
@@ -3685,8 +3747,17 @@ function init() {
   updateUserPill();
   showPanel('hero');
   checkServerConnection();
-  // Silently warm up the Gemini connection and backend DNS in the background on load
+  // Silently warm up the Gemini connection immediately on load
   fetch('/warmup').catch(() => {});
+
+  // Keep the AI connection continuously warm every 30 seconds while the user is on the page
+  setInterval(() => {
+    fetch('/warmup').catch(() => {});
+  }, 30000);
+
+  // Sync any queued offline feedback reports
+  syncOfflineFeedbackQueue();
+
   // Clear any report hash from URL on refresh so modal never auto-opens
   if (window.location.hash === '#report-issue' || window.location.hash === '#report') {
     history.replaceState(null, '', window.location.pathname + window.location.search);
