@@ -459,7 +459,7 @@ function renderHistory(items) {
   if (els.historyEmpty) els.historyEmpty.classList.add('hidden');
   if (!listEl) return;
 
-  els.historyList.innerHTML = items.map(item => {
+  listEl.innerHTML = items.map(item => {
     const rawCode = item.extractedCode || '';
     const previewLines = rawCode.split('\n').slice(0, 3).join('\n');
     const langLabel = (item.language && item.language !== 'auto') ? item.language : 'code';
@@ -2340,6 +2340,17 @@ async function runExtraction(croppedDataURL) {
       if (state.authUsed !== null) state.authUsed++;
       updateUsageUI();
       fetchUserUsage();
+
+      // Save to extraction history exactly ONCE upon confirmed success
+      if (parsed.code) {
+        fetch('/api/history/save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
+          body: JSON.stringify({ codeText: parsed.code, lang })
+        }).then(r => r.json()).then(d => {
+          if (d && d.entry) fetchHistory();
+        }).catch(() => {});
+      }
     }
 
     // Show result
@@ -2396,17 +2407,6 @@ function displayResult(code, highlightedHtml, lang, ambiguities) {
     }).join('');
   } else {
     els.ambigSection.classList.add('hidden');
-  }
-
-  // Sync to history if signed in
-  if (state.authToken && code) {
-    fetch('/api/history/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
-      body: JSON.stringify({ codeText: code, lang })
-    }).then(r => r.json()).then(d => {
-      if (d.history) renderHistory(d.history);
-    }).catch(() => {});
   }
 
   showPanel('result');
@@ -2524,14 +2524,14 @@ async function runBatchExtraction() {
           raw
         });
 
-        // Save to history if signed in
+        // Save to history exactly ONCE per image in batch
         if (state.authToken && parsed.code) {
           fetch('/api/history/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.authToken}` },
-            body: JSON.stringify({ codeText: parsed.code, lang })
+            body: JSON.stringify({ codeText: parsed.code, lang, batchCount: total })
           }).then(r => r.json()).then(d => {
-            if (d.history) renderHistory(d.history);
+            if (d && d.entry) fetchHistory();
           }).catch(() => {});
         }
       }

@@ -510,16 +510,73 @@ function getRemaining(user) {
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 const MAX_HISTORY_PER_USER = 100;
 
-function generateDefaultHistoryName(lang, timestamp) {
-  const d = new Date(timestamp || Date.now());
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const month = monthNames[d.getMonth()];
-  const day = d.getDate();
-  const langDisplay = (lang && lang !== 'auto' && lang !== 'plaintext')
-    ? lang.charAt(0).toUpperCase() + lang.slice(1)
-    : 'Code';
-  return `${langDisplay} · ${month} ${day}`;
+const CANONICAL_LANG_NAMES = {
+  python: 'Python',
+  javascript: 'JavaScript',
+  js: 'JavaScript',
+  typescript: 'TypeScript',
+  ts: 'TypeScript',
+  html: 'HTML',
+  xml: 'XML',
+  css: 'CSS',
+  scss: 'SCSS',
+  sql: 'SQL',
+  json: 'JSON',
+  php: 'PHP',
+  cpp: 'C++',
+  'c++': 'C++',
+  c: 'C',
+  csharp: 'C#',
+  'c#': 'C#',
+  cs: 'C#',
+  java: 'Java',
+  kotlin: 'Kotlin',
+  swift: 'Swift',
+  rust: 'Rust',
+  go: 'Go',
+  golang: 'Go',
+  ruby: 'Ruby',
+  bash: 'Bash',
+  sh: 'Bash',
+  shell: 'Bash',
+  zsh: 'Bash',
+  r: 'R',
+  dart: 'Dart',
+  lua: 'Lua',
+  yaml: 'YAML',
+  yml: 'YAML',
+  dockerfile: 'Dockerfile',
+  markdown: 'Markdown',
+  md: 'Markdown',
+};
+
+function formatLanguageName(lang) {
+  if (!lang || typeof lang !== 'string') return 'Unknown';
+  const clean = lang.trim().toLowerCase();
+  if (['auto', 'plaintext', 'unknown', 'code', 'text'].includes(clean)) {
+    return 'Unknown';
+  }
+  if (CANONICAL_LANG_NAMES[clean]) {
+    return CANONICAL_LANG_NAMES[clean];
+  }
+  return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
+
+function generateStandardHistoryName(lang, timestamp, batchCount = null) {
+  const d = new Date(timestamp || Date.now());
+  const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
+  if (batchCount && Number(batchCount) > 1) {
+    return `Batch ${batchCount} images · ${dateStr}, ${timeStr}`;
+  }
+
+  const langName = formatLanguageName(lang);
+  return `${langName} · ${dateStr}, ${timeStr}`;
+}
+
+// Legacy alias
+const generateDefaultHistoryName = generateStandardHistoryName;
 
 function cleanupExpiredHistory() {
   const now = Date.now();
@@ -531,21 +588,136 @@ function cleanupExpiredHistory() {
   return count;
 }
 
+/* ─── One-time Startup Deduplication Cleanup ────────────────────────────── */
+function cleanupDuplicateHistoryEntries() {
+  try {
+    const allRows = db.prepare(`
+      SELECT id, user_email, custom_name, extracted_code, language, created_at
+      FROM extraction_history
+      ORDER BY LOWER(user_email), created_at ASC, id ASC
+    `).all();
+
+    const idsToDelete = new Set();
+    const WINDOW_MS = 60 * 1000; // 60-second window per extraction
+
+    for (let i = 0; i < allRows.length; i++) {
+      const current = allRows[i];
+      if (idsToDelete.has(current.id)) continue;
+
+      for (let j = i + 1; j < allRows.length; j++) {
+        const next = allRows[j];
+        if (next.user_email.toLowerCase() !== current.user_email.toLowerCase()) break;
+        if (Math.abs(next.created_at - current.created_at) > WINDOW_MS) break;
+
+        const sameCode = (next.extracted_code.trim() === current.extracted_code.trim());
+        const sameExtraction = sameCode || (
+          Math.abs(next.created_at - current.created_at) <= 15000 &&
+          (current.language === 'auto' || next.language === 'auto' || current.language === next.language)
+        );
+
+        if (sameExtraction) {
+          if (current.language === 'auto' && next.language !== 'auto') {
+            idsToDelete.add(current.id);
+            break;
+          } else {
+            idsToDelete.add(next.id);
+          }
+        }
+      }
+    }
+
+    // Deduplicate any exact timestamp collisions for same user
+    const exactDupes = db.prepare(`
+      SELECT id FROM extraction_history
+      WHERE id NOT IN (
+        SELECT MIN(id) FROM extraction_history
+        GROUP BY LOWER(user_email), created_at
+      )
+    `).all();
+    for (const r of exactDupes) {
+      idsToDelete.add(r.id);
+    }
+
+    if (idsToDelete.size > 0) {
+      const deleteStmt = db.prepare('DELETE FROM extraction_history WHERE id = ?');
+      const deleteTx = db.transaction((ids) => {
+        for (const id of ids) deleteStmt.run(id);
+      });
+      deleteTx(Array.from(idsToDelete));
+      console.log(`[History Cleanup] Removed ${idsToDelete.size} duplicate history row(s) on startup`);
+    } else {
+      console.log('[History Cleanup] No duplicate history rows found');
+    }
+  } catch (err) {
+    console.warn('[History Cleanup] Duplicate cleanup note:', err.message);
+  }
+}
+
 // Run cleanup immediately on server start and once daily (every 24h)
 cleanupExpiredHistory();
+cleanupDuplicateHistoryEntries();
 setInterval(cleanupExpiredHistory, 24 * 60 * 60 * 1000);
 
-function saveExtractionHistory(email, extractedCode, language = 'auto', customName = null) {
+// Add unique constraint on (user_email, created_at) in database
+try {
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_history_user_created_unique
+    ON extraction_history(user_email, created_at);
+  `);
+} catch (err) {
+  console.warn('[Database] Unique constraint note:', err.message);
+}
+
+function saveExtractionHistory(email, extractedCode, language = 'auto', customName = null, batchCount = null) {
   if (!email || !extractedCode || typeof extractedCode !== 'string') return null;
   const emailClean = email.toLowerCase().trim();
   const now = Date.now();
   const expiresAt = now + NINETY_DAYS_MS;
-  const name = (customName && customName.trim()) ? customName.trim() : generateDefaultHistoryName(language, now);
 
-  const info = db.prepare(`
-    INSERT INTO extraction_history (user_email, custom_name, extracted_code, language, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(emailClean, name, extractedCode, language || 'auto', now, expiresAt);
+  // Deduplication check: if same user saved the exact same code in the last 10 seconds, do not insert duplicate
+  const recentDuplicate = db.prepare(`
+    SELECT id, custom_name, language, created_at, expires_at
+    FROM extraction_history
+    WHERE LOWER(user_email) = LOWER(?) AND extracted_code = ? AND created_at > ?
+    ORDER BY created_at DESC LIMIT 1
+  `).get(emailClean, extractedCode, now - 10000);
+
+  if (recentDuplicate) {
+    console.log(`[History] Duplicate save prevented for [${emailClean}] (matches entry #${recentDuplicate.id})`);
+    return {
+      id: recentDuplicate.id,
+      user_email: emailClean,
+      custom_name: recentDuplicate.custom_name,
+      extracted_code: extractedCode,
+      language: recentDuplicate.language,
+      created_at: recentDuplicate.created_at,
+      expires_at: recentDuplicate.expires_at,
+      duplicate: true,
+    };
+  }
+
+  const name = (customName && customName.trim())
+    ? customName.trim()
+    : generateStandardHistoryName(language, now, batchCount);
+
+  let info;
+  try {
+    info = db.prepare(`
+      INSERT INTO extraction_history (user_email, custom_name, extracted_code, language, created_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(emailClean, name, extractedCode, language || 'auto', now, expiresAt);
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      console.log(`[History] Database rejected duplicate save on UNIQUE constraint for [${emailClean}] at ${now}`);
+      const existing = db.prepare(`
+        SELECT id, custom_name, language, created_at, expires_at
+        FROM extraction_history
+        WHERE LOWER(user_email) = LOWER(?) AND created_at = ?
+      `).get(emailClean, now);
+      return existing || null;
+    }
+    throw err;
+  }
 
   // FIFO: Enforce 100-entry limit per user
   db.prepare(`
@@ -880,21 +1052,21 @@ app.post('/api/history/save', authenticate, (req, res) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Please sign in to save your extraction history.' });
   }
-  const { codeText, extractedCode, lang, language, customName, historyId } = req.body || {};
+  const { codeText, extractedCode, lang, language, customName, historyId, batchCount } = req.body || {};
   const code = extractedCode || codeText;
   const languageName = language || lang || 'auto';
 
   // If historyId is provided, update the existing entry's language and name
   if (historyId) {
-    const existing = db.prepare('SELECT * FROM extraction_history WHERE id = ? AND user_email = ?').get(historyId, req.user.email);
+    const existing = db.prepare('SELECT * FROM extraction_history WHERE id = ? AND LOWER(user_email) = LOWER(?)').get(historyId, req.user.email);
     if (existing) {
-      const newName = customName || (existing.custom_name && !existing.custom_name.startsWith('Code ·')
+      const newName = customName || (existing.custom_name && !existing.custom_name.startsWith('Unknown ·') && !existing.custom_name.startsWith('Code ·')
         ? existing.custom_name
-        : generateDefaultHistoryName(languageName, existing.created_at));
+        : generateStandardHistoryName(languageName, existing.created_at, batchCount));
       db.prepare(`
         UPDATE extraction_history
         SET language = ?, custom_name = ?
-        WHERE id = ? AND user_email = ?
+        WHERE id = ? AND LOWER(user_email) = LOWER(?)
       `).run(languageName, newName, historyId, req.user.email);
       return res.json({ ok: true, id: historyId, customName: newName, language: languageName });
     }
@@ -904,7 +1076,7 @@ app.post('/api/history/save', authenticate, (req, res) => {
     return res.status(400).json({ error: 'No code content found to save.' });
   }
 
-  const entry = saveExtractionHistory(req.user.email, code, languageName, customName);
+  const entry = saveExtractionHistory(req.user.email, code, languageName, customName, batchCount);
   res.json({ ok: true, entry });
 });
 
@@ -1162,8 +1334,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
                 shouldPromptRating = true;
               }
             }
-            const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
-            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs, historyEntry, shouldPromptRating, totalExtractions });
+            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
           } else {
             // Anonymous IP tracking in SQLite
             const newAnon = incAnonUsage(clientIp);
@@ -1218,8 +1389,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
                       shouldPromptRating = true;
                     }
                   }
-                  const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
-                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, historyEntry, shouldPromptRating, totalExtractions });
+                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
                 } else {
                   const newAnon = incAnonUsage(clientIp);
                   remaining = newAnon.remaining;
