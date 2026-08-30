@@ -1535,31 +1535,9 @@ app.get('/warmup', async (_req, res) => {
   }
 });
 
-/* ─── Server-side Request Queue (Serializes extraction requests arriving < 1s apart) ── */
-let _extractQueue = Promise.resolve();
-let _lastExtractTime = 0;
-
-function queueExtract(fn) {
-  const currentTask = _extractQueue.then(async () => {
-    const now = Date.now();
-    const gap = now - _lastExtractTime;
-    if (_lastExtractTime > 0 && gap < 1000) {
-      const waitMs = 1000 - gap;
-      console.log(`[Queue] Pacing extraction request — pausing ${waitMs}ms to avoid concurrency collision`);
-      await new Promise(r => setTimeout(r, waitMs));
-    }
-    _lastExtractTime = Date.now();
-    return fn();
-  });
-  // Keep queue chain going even if a request throws
-  _extractQueue = currentTask.catch(() => {});
-  return currentTask;
-}
-
 /* ─── POST /api/extract ──────────────────────────────────────────────────── */
 app.post('/api/extract', authenticate, async (req, res) => {
-  return queueExtract(async () => {
-    const imageStartTime = Date.now();
+  const imageStartTime = Date.now();
 
   /* ── 1. Get a fresh Gemini token (auto-refreshed for service accounts) ── */
   let cred;
@@ -1826,7 +1804,6 @@ app.post('/api/extract', authenticate, async (req, res) => {
   return res.status(502).json({
     error: 'Extraction failed — please try again',
     code:  'ALL_MODELS_FAILED',
-  });
   });
 });
 

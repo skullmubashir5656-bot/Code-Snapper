@@ -3312,9 +3312,17 @@ function bindEvents() {
     });
   }
   els.manualExtractBtn.addEventListener('click', () => {
-    if (!state.manualCropper) return;
-    const dataURL = state.manualCropper.getCroppedDataURL();
+    if (!state.manualCropper) {
+      if (state.croppedDataURL || state.uploadedDataURL) {
+        runExtraction(state.croppedDataURL || state.uploadedDataURL);
+      } else {
+        showToast('Please draw a selection first.', 'error');
+      }
+      return;
+    }
+    const dataURL = state.manualCropper.getCroppedDataURL() || state.uploadedDataURL;
     if (!dataURL) { showToast('Please draw a selection first.', 'error'); return; }
+    state.croppedDataURL = dataURL;
     runExtraction(dataURL);
   });
 
@@ -3640,6 +3648,7 @@ function enterAutoCrop() {
     showError('Could not process image for extraction.');
     return;
   }
+  state.croppedDataURL = dataURL;
   runExtraction(dataURL);
 }
 
