@@ -1638,11 +1638,19 @@ app.post('/api/extract', authenticate, async (req, res) => {
   let hardAuthError = null;
   let rateLimitError = null;
   let totalTimeoutExceeded = false;
+  let modelIndex = 0;
 
   for (const model of GEMINI_MODELS) {
+    // Add 500ms delay ONLY between the first and second model attempt (not before the first attempt)
+    if (modelIndex > 0) {
+      console.log(`[CodeSnapper] ⏱ Pausing 500ms before fallback model "${model}" to recover from possible rate limits…`);
+      await new Promise(r => setTimeout(r, 500));
+    }
+    modelIndex++;
+
     const elapsedBeforeModel = Date.now() - imageStartTime;
     if (elapsedBeforeModel >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
-      console.warn(`[CodeSnapper] ⏱ Image reached 20s total limit (${elapsedBeforeModel}ms). Skipping further model attempts.`);
+      console.warn(`[CodeSnapper] ⏱ Image reached 22s total limit (${elapsedBeforeModel}ms). Skipping further model attempts.`);
       totalTimeoutExceeded = true;
       break;
     }
@@ -1707,20 +1715,20 @@ app.post('/api/extract', authenticate, async (req, res) => {
         }
 
         const err = classifyGeminiError(gemRes.status, data);
-        console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | [${err.type}] ${err.msg}`);
+        console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | HTTP ${gemRes.status} | [${err.type}] ${err.msg}`);
 
-        if (err.type === 'RATE_LIMIT') {
-          console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model immediately…`);
+        if (err.type === 'RATE_LIMIT' || gemRes.status === 429) {
+          console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model…`);
           rateLimitError = err;
           continue;
         }
 
-        if (['AUTH_TOKEN_UNSUPPORTED', 'INVALID_KEY', 'ACCESS_DENIED'].includes(err.type)) {
+        if (['AUTH_TOKEN_UNSUPPORTED', 'INVALID_KEY', 'ACCESS_DENIED'].includes(err.type) || gemRes.status === 401 || gemRes.status === 403) {
           // If bearer token was rejected (e.g. Generative Language API restricting service accounts),
           // check if a static GEMINI_API_KEY is available and fallback immediately!
           const staticKey = (process.env.GEMINI_API_KEY || '').trim();
           if (isBearer && staticKey && staticKey !== token) {
-            console.warn(`[Auth] ⚠ Service account bearer token rejected (${err.msg}). Falling back to static GEMINI_API_KEY (${staticKey.slice(0, 10)}…)`);
+            console.warn(`[Auth] ⚠ Service account bearer token rejected (HTTP ${gemRes.status}: ${err.msg}). Falling back to static GEMINI_API_KEY (${staticKey.slice(0, 10)}…)`);
             token = staticKey;
             isBearer = false;
             _isServiceAccountActive = false;
@@ -1757,6 +1765,8 @@ app.post('/api/extract', authenticate, async (req, res) => {
                   return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs });
                 }
               }
+            } else {
+              console.error(`[Auth] ✗ Static key fallback failed: HTTP ${fallbackRes.res.status}`);
             }
           }
 
@@ -1793,7 +1803,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   if (totalTimeoutExceeded) {
     console.error(`[CodeSnapper] ✗ Image extraction timed out: exceeded total timeout of 22s (${Date.now() - imageStartTime}ms) across attempted models: ${GEMINI_MODELS.join(', ')}`);
     return res.status(504).json({
-      error: 'Extraction took longer than expected. Please try a tighter crop or check your connection.',
+      error: 'Extraction failed — please try again',
       code: 'IMAGE_TIMEOUT',
     });
   }
@@ -1802,19 +1812,19 @@ app.post('/api/extract', authenticate, async (req, res) => {
     console.error('\n[CodeSnapper] ══ AUTH FAILURE ═══════════════════');
     console.error(`  ${hardAuthError.type}: ${hardAuthError.msg}`);
     console.error('  Check your environment variables.\n');
-    return res.status(401).json({ error: 'Something went wrong on our end. Please try again shortly.', code: 'INVALID_API_KEY' });
+    return res.status(401).json({ error: 'Extraction failed — please try again', code: 'INVALID_API_KEY' });
   }
 
   if (rateLimitError) {
     return res.status(429).json({
-      error: 'Our service is experiencing high demand right now. Please wait a few seconds and try again.',
+      error: 'Extraction failed — please try again',
       code:  'RATE_LIMIT',
     });
   }
 
   console.error(`[CodeSnapper] ✗ All models failed for image! Attempted models: ${GEMINI_MODELS.join(' → ')} | Total elapsed: ${Date.now() - imageStartTime}ms`);
   return res.status(502).json({
-    error: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.',
+    error: 'Extraction failed — please try again',
     code:  'ALL_MODELS_FAILED',
   });
   });

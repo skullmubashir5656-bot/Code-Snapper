@@ -436,12 +436,19 @@ async function fetchHistory() {
 }
 
 function formatHistoryDate(timestamp) {
-  const d = new Date(timestamp);
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-IN', {
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
 }
 
 function renderHistory(items) {
@@ -1187,7 +1194,7 @@ function formatErrorMessage(err) {
     lower.includes('500') ||
     lower.includes('503')
   ) {
-    return 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.';
+    return 'Extraction failed — please try again';
   }
 
   // Catch raw stack traces, JS exceptions, or object dumps
@@ -2132,11 +2139,8 @@ async function callGemini(dataURL) {
     if (resp.status === 401 || code === 'INVALID_API_KEY') {
       throw new Error('Something went wrong on our end. Please try again shortly.');
     }
-    if (resp.status === 504 || code === 'IMAGE_TIMEOUT') {
-      throw new Error('Extraction took longer than expected. Please try a tighter crop or check your connection.');
-    }
-    if (resp.status === 502 || code === 'ALL_MODELS_FAILED') {
-      throw new Error('Extraction failed — our service is temporarily unavailable. Please try again in a moment.');
+    if (resp.status === 502 || code === 'ALL_MODELS_FAILED' || resp.status === 504 || code === 'IMAGE_TIMEOUT') {
+      throw new Error('Extraction failed — please try again');
     }
     if (resp.status === 500 || code === 'SERVER_CONFIG_ERROR') {
       throw new Error('Something went wrong on our end. Please try again shortly.');
@@ -2331,9 +2335,6 @@ async function runExtraction(croppedDataURL) {
     while (attempt <= MAX_RETRIES) {
       attempt++;
       try {
-        if (attempt > 1) {
-          els.procStatusText.textContent = `Retrying… (attempt ${attempt - 1} of ${MAX_RETRIES})`;
-        }
         extractResult = await callGemini(croppedDataURL);
         break; // Success!
       } catch (err) {
@@ -2346,9 +2347,7 @@ async function runExtraction(croppedDataURL) {
           err.message.includes('experiencing high demand');
 
         if (attempt <= MAX_RETRIES && isTimeoutOrConn) {
-          console.warn(`[CodeSnapper] Attempt ${attempt} hit connection delay. Retrying silently in 2s…`);
-          if (statusTicker) clearInterval(statusTicker);
-          els.procStatusText.textContent = `Retrying…`;
+          console.warn(`[CodeSnapper] Silent retry in 2s…`);
           await new Promise(r => setTimeout(r, 2000));
           continue;
         }
@@ -2538,7 +2537,7 @@ async function runBatchExtraction() {
       if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing source code…';
       els.procStatusText.textContent = `Processing image ${num} of ${total} · Vision AI`;
 
-      // 2. Call Gemini API with automatic 1-time retry after 3s wait on failure
+      // 2. Call Gemini API with silent 1-time retry after 3s wait on failure
       let extractRes;
       try {
         extractRes = await callGemini(croppedDataURL);
@@ -2546,12 +2545,8 @@ async function runBatchExtraction() {
         if (firstErr.message.startsWith('DAILY_LIMIT:') || firstErr.message === 'ANON_LIMIT_REACHED') {
           throw firstErr;
         }
-        console.warn(`[Batch] Image ${num} attempt 1 failed (${firstErr.message}). Waiting 3s to retry…`);
-        if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Temporary issue — retrying in 3s…';
-        els.procStatusText.textContent = `Retrying image ${num} of ${total} after 3s…`;
+        console.warn(`[Batch] Image ${num} attempt 1 failed (${firstErr.message}). Silent retry in 3s…`);
         await delay(3000);
-        if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Transcribing source code (Retry)…';
-        els.procStatusText.textContent = `Processing image ${num} of ${total} · Vision AI (Retry)`;
         extractRes = await callGemini(croppedDataURL);
       }
 
