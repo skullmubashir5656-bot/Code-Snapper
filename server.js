@@ -334,7 +334,24 @@ db.exec(`
     user_email TEXT,
     page TEXT
   );
+  CREATE TABLE IF NOT EXISTS ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stars INTEGER NOT NULL,
+    feedback TEXT,
+    user_email TEXT NOT NULL DEFAULT 'anonymous',
+    timestamp TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
 `);
+
+// Dynamic column migrations for users table (total_extractions, has_rated)
+const userCols = db.prepare(`PRAGMA table_info(users)`).all().map(c => c.name);
+if (!userCols.includes('total_extractions')) {
+  db.exec(`ALTER TABLE users ADD COLUMN total_extractions INTEGER DEFAULT 0;`);
+}
+if (!userCols.includes('has_rated')) {
+  db.exec(`ALTER TABLE users ADD COLUMN has_rated INTEGER DEFAULT 0;`);
+}
 
 // Dynamic schema migration for extraction_history (90-day retention schema)
 const historyTableInfo = db.prepare(`PRAGMA table_info(extraction_history)`).all();
@@ -520,6 +537,7 @@ setInterval(cleanupExpiredHistory, 24 * 60 * 60 * 1000);
 
 function saveExtractionHistory(email, extractedCode, language = 'auto', customName = null) {
   if (!email || !extractedCode || typeof extractedCode !== 'string') return null;
+  const emailClean = email.toLowerCase().trim();
   const now = Date.now();
   const expiresAt = now + NINETY_DAYS_MS;
   const name = (customName && customName.trim()) ? customName.trim() : generateDefaultHistoryName(language, now);
@@ -527,22 +545,24 @@ function saveExtractionHistory(email, extractedCode, language = 'auto', customNa
   const info = db.prepare(`
     INSERT INTO extraction_history (user_email, custom_name, extracted_code, language, created_at, expires_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(email, name, extractedCode, language || 'auto', now, expiresAt);
+  `).run(emailClean, name, extractedCode, language || 'auto', now, expiresAt);
 
   // FIFO: Enforce 100-entry limit per user
   db.prepare(`
     DELETE FROM extraction_history
-    WHERE user_email = ? AND id NOT IN (
+    WHERE LOWER(user_email) = LOWER(?) AND id NOT IN (
       SELECT id FROM extraction_history
-      WHERE user_email = ?
+      WHERE LOWER(user_email) = LOWER(?)
       ORDER BY created_at DESC
       LIMIT ?
     )
-  `).run(email, email, MAX_HISTORY_PER_USER);
+  `).run(emailClean, emailClean, MAX_HISTORY_PER_USER);
+
+  console.log(`[History] History saved for [${emailClean}] (entry #${info.lastInsertRowid})`);
 
   return {
     id: info.lastInsertRowid,
-    user_email: email,
+    user_email: emailClean,
     custom_name: name,
     extracted_code: extractedCode,
     language: language || 'auto',
@@ -553,13 +573,14 @@ function saveExtractionHistory(email, extractedCode, language = 'auto', customNa
 
 function getExtractionHistory(email) {
   cleanupExpiredHistory();
+  const emailClean = (email || '').toLowerCase().trim();
   const rows = db.prepare(`
     SELECT id, custom_name, extracted_code, language, created_at, expires_at
     FROM extraction_history
-    WHERE user_email = ?
+    WHERE LOWER(user_email) = LOWER(?)
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(email, MAX_HISTORY_PER_USER);
+  `).all(emailClean, MAX_HISTORY_PER_USER);
 
   const now = Date.now();
   return rows.map(r => ({
@@ -678,6 +699,54 @@ app.post('/api/admin/feedback/clear', (req, res) => {
     return res.status(401).json({ error: 'Admin authentication required.' });
   }
   db.prepare('DELETE FROM feedback').run();
+  res.json({ ok: true });
+});
+
+/* ─── POST /api/rate (Submit rating after 30th extraction) ───────────────── */
+app.post('/api/rate', authenticate, (req, res) => {
+  const { stars, feedback } = req.body || {};
+  const starCount = parseInt(stars, 10);
+  if (!starCount || starCount < 1 || starCount > 5) {
+    return res.status(400).json({ error: 'Stars must be between 1 and 5.' });
+  }
+  const cleanFeedback = (feedback || '').trim().slice(0, 200);
+  const email = req.user ? req.user.email.toLowerCase().trim() : 'anonymous';
+  const now = Date.now();
+  const timestamp = new Date(now).toISOString();
+
+  db.prepare(`
+    INSERT INTO ratings (stars, feedback, user_email, timestamp, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(starCount, cleanFeedback, email, timestamp, now);
+
+  if (req.user) {
+    db.prepare('UPDATE users SET has_rated = 1 WHERE LOWER(email) = LOWER(?)').run(email);
+  }
+
+  console.log(`[Ratings] New rating from [${email}]: ${starCount} stars${cleanFeedback ? ' - "' + cleanFeedback + '"' : ''}`);
+  res.json({ ok: true });
+});
+
+/* ─── GET /api/admin/ratings ─────────────────────────────────────────────── */
+app.get('/api/admin/ratings', (req, res) => {
+  if (!verifyAdminAuth(req)) {
+    return res.status(401).json({ error: 'Admin authentication required.' });
+  }
+  const rows = db.prepare(`
+    SELECT * FROM ratings
+    ORDER BY id DESC
+  `).all();
+  const total = rows.length;
+  const avg = total > 0 ? (rows.reduce((sum, r) => sum + r.stars, 0) / total).toFixed(1) : '0.0';
+  res.json({ ok: true, ratings: rows, total, average: avg });
+});
+
+/* ─── DELETE /api/admin/ratings/:id ──────────────────────────────────────── */
+app.delete('/api/admin/ratings/:id', (req, res) => {
+  if (!verifyAdminAuth(req)) {
+    return res.status(401).json({ error: 'Admin authentication required.' });
+  }
+  db.prepare('DELETE FROM ratings WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
 
@@ -1075,6 +1144,8 @@ app.post('/api/extract', authenticate, async (req, res) => {
 
           /* ── Increment usage counter ── */
           let remaining = null;
+          let shouldPromptRating = false;
+          let totalExtractions = 0;
           if (req.user) {
             const user = getUser(req.user.email);
             if (user) {
@@ -1083,8 +1154,16 @@ app.post('/api/extract', authenticate, async (req, res) => {
               saveUser(user);
               remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
             }
+            db.prepare('UPDATE users SET total_extractions = COALESCE(total_extractions, 0) + 1 WHERE LOWER(email) = LOWER(?)').run(req.user.email);
+            const userRow = db.prepare('SELECT total_extractions, has_rated FROM users WHERE LOWER(email) = LOWER(?)').get(req.user.email);
+            if (userRow) {
+              totalExtractions = userRow.total_extractions || 0;
+              if (totalExtractions === 30 && !userRow.has_rated) {
+                shouldPromptRating = true;
+              }
+            }
             const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
-            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs, historyEntry });
+            return res.json({ result: text, model, endpoint, remaining, durationMs: totalDurationMs, historyEntry, shouldPromptRating, totalExtractions });
           } else {
             // Anonymous IP tracking in SQLite
             const newAnon = incAnonUsage(clientIp);
@@ -1121,6 +1200,8 @@ app.post('/api/extract', authenticate, async (req, res) => {
                 _totalSuccessfulCalls++;
                 console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [fallback native/${model}]`);
                 let remaining = null;
+                let shouldPromptRating = false;
+                let totalExtractions = 0;
                 if (req.user) {
                   const user = getUser(req.user.email);
                   if (user) {
@@ -1129,8 +1210,16 @@ app.post('/api/extract', authenticate, async (req, res) => {
                     saveUser(user);
                     remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
                   }
+                  db.prepare('UPDATE users SET total_extractions = COALESCE(total_extractions, 0) + 1 WHERE LOWER(email) = LOWER(?)').run(req.user.email);
+                  const userRow = db.prepare('SELECT total_extractions, has_rated FROM users WHERE LOWER(email) = LOWER(?)').get(req.user.email);
+                  if (userRow) {
+                    totalExtractions = userRow.total_extractions || 0;
+                    if (totalExtractions === 30 && !userRow.has_rated) {
+                      shouldPromptRating = true;
+                    }
+                  }
                   const historyEntry = saveExtractionHistory(req.user.email, text, 'auto');
-                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, historyEntry });
+                  return res.json({ result: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, historyEntry, shouldPromptRating, totalExtractions });
                 } else {
                   const newAnon = incAnonUsage(clientIp);
                   remaining = newAnon.remaining;

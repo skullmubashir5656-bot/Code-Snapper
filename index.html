@@ -213,24 +213,7 @@
   </div>
 </div>
 
-<!-- ══════════════════════════════════════
-     RECENT EXTRACTIONS SECTION (Signed-in users)
-══════════════════════════════════════ -->
-<section id="history-section" class="history-section hidden" aria-label="Recent Extractions">
-  <div class="history-card">
-    <div class="history-header">
-      <div class="history-title-wrap">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:18px;height:18px;color:var(--violet-d)"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        <h3 class="history-title">Recent Extractions</h3>
-        <span class="history-badge">Signed In &middot; Last 10</span>
-      </div>
-      <span class="history-sub">Saved for 7 days</span>
-    </div>
-    <div id="history-list" class="history-list" role="list">
-      <!-- Filled dynamically via JS -->
-    </div>
-  </div>
-</section>
+
 
 <!-- ══════════════════════════════════════
      APP WORKFLOW SECTION
@@ -922,6 +905,46 @@
       <button class="btn btn-primary" id="error-retry-btn">Try Again</button>
       <button class="btn btn-secondary" id="error-report-btn">Report Issue</button>
       <button class="btn btn-ghost" id="error-modal-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     RATE US MODAL (Triggered after 30th Extraction)
+══════════════════════════════════════ -->
+<div id="rate-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="rate-modal-title">
+  <div class="modal modal-sm" style="text-align:center">
+    <button class="btn btn-ghost btn-icon modal-close-btn" id="rate-modal-close" aria-label="Close">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <div class="modal-icon-wrap" style="background:rgba(234,179,8,.12);border:1px solid rgba(234,179,8,.35);margin:0 auto 14px;width:48px;height:48px">
+      <span style="font-size:22px;line-height:1">⭐</span>
+    </div>
+    <h2 class="modal-title" id="rate-modal-title" style="font-size:20px;margin-bottom:6px">Enjoying CodeSnapper?</h2>
+    <p class="modal-desc" style="font-size:13.5px;color:var(--txt-2);margin-bottom:18px">Rate us! Your feedback helps us keep the tool free and sharp.</p>
+
+    <!-- 5 Clickable Stars -->
+    <div class="star-rating-wrap" id="star-rating-wrap" role="radiogroup" aria-label="Rating from 1 to 5 stars">
+      <button type="button" class="star-btn" data-star="1" aria-label="1 star">★</button>
+      <button type="button" class="star-btn" data-star="2" aria-label="2 stars">★</button>
+      <button type="button" class="star-btn" data-star="3" aria-label="3 stars">★</button>
+      <button type="button" class="star-btn" data-star="4" aria-label="4 stars">★</button>
+      <button type="button" class="star-btn" data-star="5" aria-label="5 stars">★</button>
+    </div>
+
+    <!-- Optional Feedback Textarea -->
+    <div style="margin-bottom:18px;text-align:left">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <label for="rate-feedback-text" style="font-size:12px;color:var(--txt-2);font-weight:600">Any feedback? (optional)</label>
+        <span id="rate-char-count" style="font-size:11px;color:var(--txt-3)">0/200</span>
+      </div>
+      <textarea id="rate-feedback-text" class="input" rows="2" maxlength="200" placeholder="What do you like or what can we improve?" style="resize:none;font-size:13px;padding:8px 10px;width:100%;box-sizing:border-box;border-radius:var(--r-md)"></textarea>
+    </div>
+
+    <!-- Actions -->
+    <div class="modal-actions" style="display:flex;flex-direction:column;gap:8px">
+      <button class="btn btn-primary btn-lg" id="rate-submit-btn" style="width:100%;justify-content:center">Submit Rating</button>
+      <button class="btn btn-ghost" id="rate-maybe-later-btn" style="width:100%;justify-content:center;color:var(--txt-3)">Maybe Later</button>
     </div>
   </div>
 </div>

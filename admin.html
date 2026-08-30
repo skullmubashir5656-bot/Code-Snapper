@@ -69,72 +69,145 @@
 <main class="admin-wrap">
   <div class="admin-header">
     <div>
-      <h1 class="admin-title">User Feedback &amp; <span>Bug Reports</span></h1>
-      <p style="font-size:14px;color:#9ca3af;margin-top:4px">Stored in SQLite database &middot; Direct issue stream</p>
+      <h1 class="admin-title">Admin Dashboard &middot; <span id="admin-view-title">Feedback &amp; Reports</span></h1>
+      <p style="font-size:14px;color:#9ca3af;margin-top:4px">Stored in SQLite database &middot; Direct issue stream &amp; user ratings</p>
     </div>
     <div style="display:flex;gap:10px">
-      <button class="btn btn-secondary btn-sm" onclick="loadFeedback()">
+      <button class="btn btn-secondary btn-sm" onclick="refreshActiveTab()">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         Refresh
       </button>
-      <button class="btn btn-ghost btn-sm" onclick="clearAllFeedback()" style="color:#ef4444">Clear All</button>
+      <button class="btn btn-ghost btn-sm" id="clear-btn" onclick="clearActiveData()" style="color:#ef4444">Clear All</button>
     </div>
   </div>
 
-  <!-- Stat Cards -->
-  <div class="stat-cards">
-    <div class="stat-card">
-      <p class="stat-label">Total Reports</p>
-      <p class="stat-val" id="stat-total">0</p>
+  <!-- Navigation Tabs -->
+  <div style="display:flex;gap:8px;margin-bottom:24px;border-bottom:1px solid var(--border-2);padding-bottom:12px">
+    <button class="btn btn-primary btn-sm" id="tab-feedback-btn" onclick="switchAdminTab('feedback')">
+      Bug Reports (<span id="tab-feedback-count">0</span>)
+    </button>
+    <button class="btn btn-secondary btn-sm" id="tab-ratings-btn" onclick="switchAdminTab('ratings')">
+      User Ratings ⭐ (<span id="tab-ratings-count">0</span>)
+    </button>
+  </div>
+
+  <!-- ── VIEW 1: FEEDBACK & BUG REPORTS ── -->
+  <div id="view-feedback">
+    <!-- Stat Cards -->
+    <div class="stat-cards">
+      <div class="stat-card">
+        <p class="stat-label">Total Reports</p>
+        <p class="stat-val" id="stat-total">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Wrong Code</p>
+        <p class="stat-val" id="stat-wrong" style="color:#f87171">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Missing Chars</p>
+        <p class="stat-val" id="stat-missing" style="color:#fbbf24">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Crop Issues</p>
+        <p class="stat-val" id="stat-crop" style="color:#c4b5fd">0</p>
+      </div>
     </div>
-    <div class="stat-card">
-      <p class="stat-label">Wrong Code</p>
-      <p class="stat-val" id="stat-wrong" style="color:#f87171">0</p>
+
+    <!-- Filters -->
+    <div class="admin-toolbar">
+      <div class="admin-search">
+        <input type="text" id="filter-search" class="input" placeholder="Search description, email, or page..." oninput="renderTable()" style="font-size:13.5px;min-height:38px">
+        <select id="filter-type" class="admin-select" onchange="renderTable()">
+          <option value="">All Types</option>
+          <option value="Wrong code extracted">Wrong code extracted</option>
+          <option value="Missing characters">Missing characters</option>
+          <option value="Crop didn't work">Crop didn't work</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div id="filter-count" style="font-size:13px;color:#9ca3af;font-weight:600">Showing 0 reports</div>
     </div>
-    <div class="stat-card">
-      <p class="stat-label">Missing Chars</p>
-      <p class="stat-val" id="stat-missing" style="color:#fbbf24">0</p>
-    </div>
-    <div class="stat-card">
-      <p class="stat-label">Crop Issues</p>
-      <p class="stat-val" id="stat-crop" style="color:#c4b5fd">0</p>
+
+    <!-- Table -->
+    <div class="table-card">
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width:50px">ID</th>
+              <th style="width:160px">Type</th>
+              <th>Description</th>
+              <th style="width:180px">User</th>
+              <th style="width:120px">Page</th>
+              <th style="width:170px">Timestamp</th>
+              <th style="width:60px;text-align:right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="feedback-tbody">
+            <tr><td colspan="7" class="empty-state">Loading feedback reports…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
-  <!-- Filters -->
-  <div class="admin-toolbar">
-    <div class="admin-search">
-      <input type="text" id="filter-search" class="input" placeholder="Search description, email, or page..." oninput="renderTable()" style="font-size:13.5px;min-height:38px">
-      <select id="filter-type" class="admin-select" onchange="renderTable()">
-        <option value="">All Types</option>
-        <option value="Wrong code extracted">Wrong code extracted</option>
-        <option value="Missing characters">Missing characters</option>
-        <option value="Crop didn't work">Crop didn't work</option>
-        <option value="Other">Other</option>
-      </select>
+  <!-- ── VIEW 2: USER RATINGS ── -->
+  <div id="view-ratings" style="display:none">
+    <!-- Rating Stat Cards -->
+    <div class="stat-cards">
+      <div class="stat-card">
+        <p class="stat-label">Average Rating</p>
+        <p class="stat-val" id="stat-rating-avg" style="color:#eab308">⭐ 0.0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Total Ratings</p>
+        <p class="stat-val" id="stat-rating-total">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">5-Star Ratings</p>
+        <p class="stat-val" id="stat-rating-5star" style="color:#10b981">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">With Feedback</p>
+        <p class="stat-val" id="stat-rating-with-text" style="color:#c4b5fd">0</p>
+      </div>
     </div>
-    <div id="filter-count" style="font-size:13px;color:#9ca3af;font-weight:600">Showing 0 reports</div>
-  </div>
 
-  <!-- Table -->
-  <div class="table-card">
-    <div class="table-scroll">
-      <table class="admin-table">
-        <thead>
-          <tr>
-            <th style="width:50px">ID</th>
-            <th style="width:160px">Type</th>
-            <th>Description</th>
-            <th style="width:180px">User</th>
-            <th style="width:120px">Page</th>
-            <th style="width:170px">Timestamp</th>
-            <th style="width:60px;text-align:right">Action</th>
-          </tr>
-        </thead>
-        <tbody id="feedback-tbody">
-          <tr><td colspan="7" class="empty-state">Loading feedback reports…</td></tr>
-        </tbody>
-      </table>
+    <!-- Rating Filters -->
+    <div class="admin-toolbar">
+      <div class="admin-search">
+        <input type="text" id="rating-filter-search" class="input" placeholder="Search feedback text or user email..." oninput="renderRatingsTable()" style="font-size:13.5px;min-height:38px">
+        <select id="rating-filter-stars" class="admin-select" onchange="renderRatingsTable()">
+          <option value="">All Stars</option>
+          <option value="5">⭐⭐⭐⭐⭐ (5 Stars)</option>
+          <option value="4">⭐⭐⭐⭐ (4 Stars)</option>
+          <option value="3">⭐⭐⭐ (3 Stars)</option>
+          <option value="2">⭐⭐ (2 Stars)</option>
+          <option value="1">⭐ (1 Star)</option>
+        </select>
+      </div>
+      <div id="rating-filter-count" style="font-size:13px;color:#9ca3af;font-weight:600">Showing 0 ratings</div>
+    </div>
+
+    <!-- Rating Table -->
+    <div class="table-card">
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th style="width:50px">ID</th>
+              <th style="width:140px">Rating</th>
+              <th>Feedback Note</th>
+              <th style="width:200px">User</th>
+              <th style="width:170px">Timestamp</th>
+              <th style="width:60px;text-align:right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="ratings-tbody">
+            <tr><td colspan="6" class="empty-state">Loading user ratings…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </main>
@@ -158,6 +231,8 @@
 
 <script>
   let allReports = [];
+  let allRatings = [];
+  let activeTab = 'feedback';
   const STORAGE_KEY = 'cs_admin_token';
 
   function getAdminToken() {
@@ -202,9 +277,39 @@
       setAdminToken(data.token);
       hideLoginModal();
       loadFeedback();
+      loadRatings();
     } catch (err) {
       errEl.textContent = err.message;
       errEl.style.display = 'block';
+    }
+  }
+
+  function switchAdminTab(tab) {
+    activeTab = tab;
+    const isFeedback = tab === 'feedback';
+    document.getElementById('view-feedback').style.display = isFeedback ? 'block' : 'none';
+    document.getElementById('view-ratings').style.display = isFeedback ? 'none' : 'block';
+
+    const fbBtn = document.getElementById('tab-feedback-btn');
+    const rtBtn = document.getElementById('tab-ratings-btn');
+    fbBtn.className = isFeedback ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+    rtBtn.className = isFeedback ? 'btn btn-secondary btn-sm' : 'btn btn-primary btn-sm';
+
+    document.getElementById('admin-view-title').textContent = isFeedback ? 'Feedback & Reports' : 'User Ratings';
+    document.getElementById('clear-btn').style.display = isFeedback ? 'inline-flex' : 'none';
+  }
+
+  function refreshActiveTab() {
+    if (activeTab === 'feedback') {
+      loadFeedback();
+    } else {
+      loadRatings();
+    }
+  }
+
+  function clearActiveData() {
+    if (activeTab === 'feedback') {
+      clearAllFeedback();
     }
   }
 
@@ -248,10 +353,36 @@
       }
       const data = await res.json();
       allReports = data.feedback || [];
+      document.getElementById('tab-feedback-count').textContent = allReports.length;
       updateStats();
       renderTable();
     } catch (err) {
       console.error('Failed to load feedback:', err);
+    }
+  }
+
+  async function loadRatings() {
+    const token = getAdminToken();
+    if (!token) {
+      showLoginModal();
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/ratings', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        logoutAdmin();
+        return;
+      }
+      const data = await res.json();
+      allRatings = data.ratings || [];
+      document.getElementById('tab-ratings-count').textContent = allRatings.length;
+      updateRatingStats();
+      renderRatingsTable();
+    } catch (err) {
+      console.error('Failed to load ratings:', err);
     }
   }
 
@@ -260,6 +391,15 @@
     document.getElementById('stat-wrong').textContent = allReports.filter(r => (r.type || '').toLowerCase().includes('wrong')).length;
     document.getElementById('stat-missing').textContent = allReports.filter(r => (r.type || '').toLowerCase().includes('missing')).length;
     document.getElementById('stat-crop').textContent = allReports.filter(r => (r.type || '').toLowerCase().includes('crop')).length;
+  }
+
+  function updateRatingStats() {
+    const total = allRatings.length;
+    const avg = total > 0 ? (allRatings.reduce((s, r) => s + r.stars, 0) / total).toFixed(1) : '0.0';
+    document.getElementById('stat-rating-avg').textContent = `⭐ ${avg}`;
+    document.getElementById('stat-rating-total').textContent = total;
+    document.getElementById('stat-rating-5star').textContent = allRatings.filter(r => r.stars === 5).length;
+    document.getElementById('stat-rating-with-text').textContent = allRatings.filter(r => r.feedback && r.feedback.trim()).length;
   }
 
   function renderTable() {
@@ -304,6 +444,52 @@
     `).join('');
   }
 
+  function renderRatingsTable() {
+    const search = document.getElementById('rating-filter-search').value.toLowerCase().trim();
+    const starFilter = document.getElementById('rating-filter-stars').value;
+
+    const filtered = allRatings.filter(r => {
+      if (starFilter && String(r.stars) !== starFilter) return false;
+      if (search) {
+        const text = `${r.feedback || ''} ${r.user_email || ''}`.toLowerCase();
+        if (!text.includes(search)) return false;
+      }
+      return true;
+    });
+
+    document.getElementById('rating-filter-count').textContent = `Showing ${filtered.length} of ${allRatings.length} ratings`;
+
+    const tbody = document.getElementById('ratings-tbody');
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="empty-state">No user ratings found.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(r => {
+      const starsDisplay = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
+      return `
+        <tr>
+          <td style="color:#9ca3af;font-family:monospace;font-weight:600">#${r.id}</td>
+          <td>
+            <span style="color:#eab308;font-size:16px;letter-spacing:1px;font-weight:700" title="${r.stars} out of 5 stars">${starsDisplay}</span>
+          </td>
+          <td>
+            <div class="desc-text">${r.feedback ? escapeHtml(r.feedback) : '<span style="color:#64748b;font-style:italic">No feedback comment</span>'}</div>
+          </td>
+          <td>
+            ${r.user_email && r.user_email !== 'anonymous' ? `<span style="color:var(--violet-d);font-weight:600">${escapeHtml(r.user_email)}</span>` : '<span style="color:#94a3b8;font-weight:500">Anonymous</span>'}
+          </td>
+          <td style="font-size:12.5px;color:#9ca3af;white-space:nowrap">${formatTime(r.timestamp)}</td>
+          <td style="text-align:right">
+            <button class="btn btn-ghost btn-sm" onclick="deleteRating(${r.id})" style="color:#f87171;padding:4px 8px" title="Delete rating">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
   async function deleteFeedback(id) {
     if (!confirm(`Delete feedback report #${id}?`)) return;
     const token = getAdminToken();
@@ -314,11 +500,31 @@
       });
       if (res.ok) {
         allReports = allReports.filter(r => r.id !== id);
+        document.getElementById('tab-feedback-count').textContent = allReports.length;
         updateStats();
         renderTable();
       }
     } catch (err) {
       alert('Failed to delete report: ' + err.message);
+    }
+  }
+
+  async function deleteRating(id) {
+    if (!confirm(`Delete rating #${id}?`)) return;
+    const token = getAdminToken();
+    try {
+      const res = await fetch(`/api/admin/ratings/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        allRatings = allRatings.filter(r => r.id !== id);
+        document.getElementById('tab-ratings-count').textContent = allRatings.length;
+        updateRatingStats();
+        renderRatingsTable();
+      }
+    } catch (err) {
+      alert('Failed to delete rating: ' + err.message);
     }
   }
 
@@ -332,6 +538,7 @@
       });
       if (res.ok) {
         allReports = [];
+        document.getElementById('tab-feedback-count').textContent = 0;
         updateStats();
         renderTable();
       }
@@ -349,6 +556,7 @@
 
   // Init
   loadFeedback();
+  loadRatings();
 </script>
 
 </body>

@@ -199,7 +199,16 @@ const els = {
   historyCountBadge:    $('history-count-badge'),
   historyLoading:       $('history-loading'),
   historyEmpty:         $('history-empty'),
-  historyList:          $('history-list'),
+  historyList:          $('drawer-history-list') || $('history-list'),
+
+  // Rate Us modal
+  rateModal:            $('rate-modal'),
+  rateModalClose:       $('rate-modal-close'),
+  rateSubmitBtn:        $('rate-submit-btn'),
+  rateMaybeLaterBtn:    $('rate-maybe-later-btn'),
+  starRatingWrap:       $('star-rating-wrap'),
+  rateFeedbackText:     $('rate-feedback-text'),
+  rateCharCount:        $('rate-char-count'),
 
   errorModal:       $('error-modal'),
   errorModalMsg:    $('error-modal-msg'),
@@ -403,6 +412,8 @@ async function fetchHistory() {
     return;
   }
 
+  const listEl = els.historyList || $('drawer-history-list') || $('history-list');
+  if (listEl) listEl.innerHTML = '';
   if (els.historyLoading) els.historyLoading.classList.remove('hidden');
   if (els.historyEmpty) els.historyEmpty.classList.add('hidden');
 
@@ -416,7 +427,8 @@ async function fetchHistory() {
     } else {
       if (els.historyEmpty) els.historyEmpty.classList.remove('hidden');
     }
-  } catch {
+  } catch (err) {
+    console.error('[History] Fetch error:', err);
     if (els.historyEmpty) els.historyEmpty.classList.remove('hidden');
   } finally {
     if (els.historyLoading) els.historyLoading.classList.add('hidden');
@@ -437,14 +449,15 @@ function renderHistory(items) {
   const count = (items || []).length;
   if (els.historyCountBadge) els.historyCountBadge.textContent = count;
 
+  const listEl = els.historyList || $('drawer-history-list') || $('history-list');
   if (!items || items.length === 0) {
     if (els.historyEmpty) els.historyEmpty.classList.remove('hidden');
-    if (els.historyList) els.historyList.innerHTML = '';
+    if (listEl) listEl.innerHTML = '';
     return;
   }
 
   if (els.historyEmpty) els.historyEmpty.classList.add('hidden');
-  if (!els.historyList) return;
+  if (!listEl) return;
 
   els.historyList.innerHTML = items.map(item => {
     const rawCode = item.extractedCode || '';
@@ -809,13 +822,28 @@ async function handleSignUp() {
 }
 
 /* ═══════════════════════════════════════════════
-   USAGE TRACKING  (anon only — signed-in tracked server-side)
+   USAGE TRACKING & EXTRACTION LIMITS
+   Anon: 25 free extractions (no account needed)
+   Signed-in: 50 extractions per day (resets every 24h)
 ═══════════════════════════════════════════════ */
 function getCount()  { return parseInt(localStorage.getItem(STORAGE_KEY_CNT) || '0', 10); }
 function incCount()  { localStorage.setItem(STORAGE_KEY_CNT, String(getCount() + 1)); }
 function isLimited() {
-  if (state.authToken) return false;          // signed-in: server decides
+  if (state.authToken) return false; // signed-in: server decides
   return getCount() >= MAX_ANON_EXTRACTIONS;
+}
+
+let countdownInterval = null;
+
+function formatCountdown(ms) {
+  if (ms <= 0) return '0 minutes';
+  const totalMins = Math.ceil(ms / 60000);
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hours > 0) {
+    return `${hours} hour${hours > 1 ? 's' : ''} ${mins} minute${mins !== 1 ? 's' : ''}`;
+  }
+  return `${mins} minute${mins !== 1 ? 's' : ''}`;
 }
 
 function updateUsageUI() {
@@ -825,37 +853,94 @@ function updateUsageUI() {
   const usageProg    = document.getElementById('usage-progress') || (els ? els.usageProgress : null);
 
   if (state.authToken) {
-    // Signed-in user: always trust server-side usage count out of 50
+    // Signed-in user: 50 extractions per day
     const limit = 50;
     const used = state.authUsed !== null
       ? state.authUsed
       : (state.authRemaining !== null ? Math.max(0, limit - state.authRemaining) : 0);
 
-    if (usageTextEl) {
-      usageTextEl.innerHTML = `<span class="count" id="usage-count">${used}</span> / ${limit} daily extractions used`;
-    } else if (usageCountEl) {
-      usageCountEl.textContent = used;
+    const isDailyLimitReached = (used >= limit) || (state.authRemaining === 0);
+
+    if (isDailyLimitReached) {
+      const now = Date.now();
+      const resetTime = state.authResetAt || (now + 24 * 60 * 60 * 1000);
+      const remainingMs = Math.max(0, resetTime - now);
+      const countdownStr = formatCountdown(remainingMs);
+
+      if (usageTextEl) {
+        usageTextEl.innerHTML = `<span style="color:#ef4444;font-weight:700">Daily limit reached</span> — resets in ${countdownStr}`;
+      }
+
+      if (!countdownInterval) {
+        countdownInterval = setInterval(() => {
+          if (state.authToken && ((state.authUsed !== null && state.authUsed >= 50) || state.authRemaining === 0)) {
+            updateUsageUI();
+          } else {
+            clearInterval(countdownInterval);
+            countdownInterval = null;
+          }
+        }, 30000);
+      }
+    } else {
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+      if (usageTextEl) {
+        usageTextEl.innerHTML = `<span class="count" id="usage-count">${used}</span> / ${limit} extractions per day · Resets every 24 hours`;
+      } else if (usageCountEl) {
+        usageCountEl.textContent = used;
+      }
     }
 
     const pct = Math.min(100, Math.max(0, (used / limit) * 100));
-    if (usageFill) usageFill.style.width = pct + '%';
+    if (usageFill) {
+      usageFill.style.width = pct + '%';
+      if (pct >= 80) {
+        usageFill.style.background = '#ef4444'; // Red
+      } else if (pct >= 50) {
+        usageFill.style.background = '#f59e0b'; // Yellow
+      } else {
+        usageFill.style.background = '#10b981'; // Green
+      }
+    }
     if (usageProg) {
       usageProg.setAttribute('aria-valuemax', String(limit));
       usageProg.setAttribute('aria-valuenow', String(used));
     }
   } else {
-    // Anonymous user: localStorage count out of 25
+    // Anonymous user: 25 free extractions — no account needed
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
     const limit = MAX_ANON_EXTRACTIONS || 25;
     const n = getCount();
+    const isAnonLimitReached = n >= limit;
 
-    if (usageTextEl) {
-      usageTextEl.innerHTML = `<span class="count" id="usage-count">${n}</span> / ${limit} free extractions used`;
-    } else if (usageCountEl) {
-      usageCountEl.textContent = n;
+    if (isAnonLimitReached) {
+      if (usageTextEl) {
+        usageTextEl.innerHTML = `You've used all 25 free extractions — <button type="button" class="btn btn-primary btn-xs" onclick="openAuthModal({fromLimit:true})" style="font-size:12px;padding:2px 10px;margin-left:6px;display:inline-flex;vertical-align:middle">Sign in for 50/day</button>`;
+      }
+    } else {
+      if (usageTextEl) {
+        usageTextEl.innerHTML = `<span class="count" id="usage-count">${n}</span> / ${limit} free extractions used · No account needed`;
+      } else if (usageCountEl) {
+        usageCountEl.textContent = n;
+      }
     }
 
     const pct = Math.min(100, Math.max(0, (n / limit) * 100));
-    if (usageFill) usageFill.style.width = pct + '%';
+    if (usageFill) {
+      usageFill.style.width = pct + '%';
+      if (pct >= 80) {
+        usageFill.style.background = '#ef4444'; // Red
+      } else if (pct >= 50) {
+        usageFill.style.background = '#f59e0b'; // Yellow
+      } else {
+        usageFill.style.background = '#10b981'; // Green
+      }
+    }
     if (usageProg) {
       usageProg.setAttribute('aria-valuemax', String(limit));
       usageProg.setAttribute('aria-valuenow', String(n));
@@ -883,6 +968,117 @@ function closeModal(el) {
   document.documentElement.style.overflow = '';
   document.body.style.position = '';
   document.body.style.touchAction = '';
+}
+
+/* ═══════════════════════════════════════════════
+   RATE US PROMPT (After 30th Cumulative Extraction)
+═══════════════════════════════════════════════ */
+const STORAGE_KEY_CUMULATIVE       = 'cs_cumulative_extractions';
+const STORAGE_KEY_HAS_RATED        = 'cs_has_rated';
+const STORAGE_KEY_RATING_DISMISSED = 'cs_rating_dismissed_until';
+
+function hasUserRated() {
+  return localStorage.getItem(STORAGE_KEY_HAS_RATED) === 'true';
+}
+
+function isRatingDismissed() {
+  const dismissedUntil = parseInt(localStorage.getItem(STORAGE_KEY_RATING_DISMISSED) || '0', 10);
+  return Date.now() < dismissedUntil;
+}
+
+function getCumulativeCount() {
+  return parseInt(localStorage.getItem(STORAGE_KEY_CUMULATIVE) || '0', 10);
+}
+
+function incCumulativeCount() {
+  const count = getCumulativeCount() + 1;
+  localStorage.setItem(STORAGE_KEY_CUMULATIVE, String(count));
+  return count;
+}
+
+function checkAndPromptRating(forceCheck = false) {
+  if (hasUserRated()) return;
+  if (isRatingDismissed()) return;
+
+  if (forceCheck) {
+    setTimeout(() => openRateModal(), 1200);
+    return;
+  }
+
+  const count = incCumulativeCount();
+  if (count === 30) {
+    setTimeout(() => openRateModal(), 1200);
+  }
+}
+
+function openRateModal() {
+  if (!els.rateModal) return;
+  state.selectedRating = 5;
+  updateStarsUI(5);
+  if (els.rateFeedbackText) els.rateFeedbackText.value = '';
+  if (els.rateCharCount) els.rateCharCount.textContent = '0/200';
+  openModal(els.rateModal);
+}
+
+function closeRateModal() {
+  if (!els.rateModal) return;
+  closeModal(els.rateModal);
+}
+
+function updateStarsUI(starCount) {
+  state.selectedRating = starCount;
+  const starBtns = document.querySelectorAll('#star-rating-wrap .star-btn');
+  starBtns.forEach((btn, idx) => {
+    const starNum = idx + 1;
+    if (starNum <= starCount) {
+      btn.classList.add('selected');
+      btn.style.color = '#eab308';
+    } else {
+      btn.classList.remove('selected');
+      btn.style.color = '#475569';
+    }
+  });
+}
+
+async function submitRating() {
+  const stars = state.selectedRating || 5;
+  const feedback = (els.rateFeedbackText ? els.rateFeedbackText.value : '').trim().slice(0, 200);
+
+  if (els.rateSubmitBtn) {
+    els.rateSubmitBtn.disabled = true;
+    els.rateSubmitBtn.textContent = 'Submitting…';
+  }
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (state.authToken) headers['Authorization'] = `Bearer ${state.authToken}`;
+
+    await fetch('/api/rate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ stars, feedback })
+    });
+
+    localStorage.setItem(STORAGE_KEY_HAS_RATED, 'true');
+    closeRateModal();
+    showToast('Thanks for your feedback! 🎉', 'success');
+  } catch (err) {
+    console.error('Error submitting rating:', err);
+    localStorage.setItem(STORAGE_KEY_HAS_RATED, 'true');
+    closeRateModal();
+    showToast('Thanks for your feedback! 🎉', 'success');
+  } finally {
+    if (els.rateSubmitBtn) {
+      els.rateSubmitBtn.disabled = false;
+      els.rateSubmitBtn.textContent = 'Submit Rating';
+    }
+  }
+}
+
+function dismissRatingFor7Days() {
+  const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+  localStorage.setItem(STORAGE_KEY_RATING_DISMISSED, String(Date.now() + sevenDaysMs));
+  closeRateModal();
 }
 
 /* ═══════════════════════════════════════════════
@@ -1954,6 +2150,11 @@ async function callGemini(dataURL) {
     updateUserPill();
   }
 
+  // Trigger Rate Us prompt if 30th extraction reached
+  if (data.shouldPromptRating) {
+    checkAndPromptRating(true);
+  }
+
   const text = data?.result;
   if (!text) throw new Error('No code content was returned. Please try again.');
   return text;
@@ -2134,6 +2335,7 @@ async function runExtraction(croppedDataURL) {
     if (!state.authToken) {
       incCount();
       updateUsageUI();
+      checkAndPromptRating();
     } else {
       if (state.authUsed !== null) state.authUsed++;
       updateUsageUI();
@@ -2338,6 +2540,7 @@ async function runBatchExtraction() {
       if (!state.authToken) {
         incCount();
         updateUsageUI();
+        checkAndPromptRating();
       } else {
         if (state.authUsed !== null) state.authUsed++;
         updateUsageUI();
@@ -3175,8 +3378,39 @@ function bindEvents() {
     els.historyBackdrop.addEventListener('click', closeHistoryDrawer);
   }
 
+  /* ── Rate Us Modal ── */
+  if (els.rateModalClose) {
+    els.rateModalClose.addEventListener('click', dismissRatingFor7Days);
+  }
+  if (els.rateMaybeLaterBtn) {
+    els.rateMaybeLaterBtn.addEventListener('click', dismissRatingFor7Days);
+  }
+  if (els.rateSubmitBtn) {
+    els.rateSubmitBtn.addEventListener('click', submitRating);
+  }
+  const starBtns = document.querySelectorAll('#star-rating-wrap .star-btn');
+  starBtns.forEach((btn, idx) => {
+    const starVal = idx + 1;
+    btn.addEventListener('mouseenter', () => {
+      starBtns.forEach((b, i) => {
+        b.style.color = (i < starVal) ? '#eab308' : '#475569';
+      });
+    });
+    btn.addEventListener('mouseleave', () => {
+      updateStarsUI(state.selectedRating || 5);
+    });
+    btn.addEventListener('click', () => {
+      updateStarsUI(starVal);
+    });
+  });
+  if (els.rateFeedbackText && els.rateCharCount) {
+    els.rateFeedbackText.addEventListener('input', () => {
+      els.rateCharCount.textContent = `${els.rateFeedbackText.value.length}/200`;
+    });
+  }
+
   /* ── Close modals on backdrop click ── */
-  [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
+  [els.authModal, els.errorModal, els.feedbackModal, els.rateModal].forEach(modal => {
     if (modal) modal.addEventListener('click', e => {
       if (e.target === modal) closeModal(modal);
     });
@@ -3185,7 +3419,7 @@ function bindEvents() {
   /* ── Close modals and drawer on Escape ── */
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      [els.authModal, els.errorModal, els.feedbackModal].forEach(modal => {
+      [els.authModal, els.errorModal, els.feedbackModal, els.rateModal].forEach(modal => {
         if (modal && !modal.classList.contains('hidden')) closeModal(modal);
       });
       if (els.historyDrawerWrap && !els.historyDrawerWrap.classList.contains('hidden')) {
