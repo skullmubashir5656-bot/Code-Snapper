@@ -692,11 +692,10 @@ function openAuthModal(opts = {}) {
 
   if (opts.fromLimit) {
     els.authModalDesc.innerHTML =
-      'You’ve used all 25 free extractions. Sign in or create a free account to get ' +
-      '<strong>50 extractions per day</strong> — resets every 24 hours.';
+      'You’ve used all 25 free extractions. Sign in for <strong>50 extractions/day + code history</strong>.';
   } else {
     els.authModalDesc.innerHTML =
-      'Sign in or create a free account to unlock <strong>50 extractions per day</strong>.';
+      'Sign in for <strong>50 extractions/day + code history</strong>.';
   }
 
   openModal(els.authModal);
@@ -719,23 +718,17 @@ function switchAuthTab(tab) {
 function updateStrength(pw) {
   let score = 0;
   if (pw.length >= 8)  score++;
-  if (pw.length >= 12) score++;
-  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-  if (/\d/.test(pw)) score++;
+  if (/[A-Z]/.test(pw) && /[0-9]/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
 
-  const levels = [
-    { pct: '20%',  color: 'var(--danger)',  lbl: 'Too short' },
-    { pct: '40%',  color: 'var(--warning)', lbl: 'Weak' },
-    { pct: '60%',  color: 'var(--warning)', lbl: 'Fair' },
-    { pct: '80%',  color: 'var(--info)',    lbl: 'Good' },
-    { pct: '100%', color: 'var(--success)', lbl: 'Strong' },
-  ];
-  const lv = levels[Math.max(0, score - 1)] || levels[0];
-  els.pwStrengthFill.style.width  = pw.length ? lv.pct  : '0%';
-  els.pwStrengthFill.style.background = pw.length ? lv.color : '';
-  els.pwStrengthLbl.textContent   = pw.length ? lv.lbl  : '';
-  els.pwStrengthLbl.style.color   = pw.length ? lv.color : '';
+  const pct = score === 0 ? 0 : score === 1 ? 33 : score === 2 ? 66 : 100;
+  const color = score <= 1 ? '#ef4444' : score === 2 ? '#f59e0b' : '#10b981';
+  const label = score === 0 ? '' : score === 1 ? 'Weak' : score === 2 ? 'Fair' : 'Strong';
+
+  els.pwStrengthFill.style.width  = pct + '%';
+  els.pwStrengthFill.style.background = color;
+  els.pwStrengthLbl.textContent   = label;
+  els.pwStrengthLbl.style.color   = color;
 }
 
 /* Toggle password visibility */
@@ -814,7 +807,7 @@ async function handleSignUp() {
     await fetchUserUsage();
     closeAuthModal();
     updateUserPill();
-    showToast(`Account created! Welcome, ${d.email.split('@')[0]} ✨`);
+    showToast('Welcome! You have 50 extractions per day and your code history is saved for 90 days.', 'success');
     if (state.pendingExtract) { state.pendingExtract = false; runExtraction(state.croppedDataURL); }
   } catch (e) {
     if (e.message && e.message.includes('already exists')) {
@@ -855,14 +848,14 @@ function isLimited() {
 let countdownInterval = null;
 
 function formatCountdown(ms) {
-  if (ms <= 0) return '0 minutes';
+  if (ms <= 0) return '0m';
   const totalMins = Math.ceil(ms / 60000);
   const hours = Math.floor(totalMins / 60);
   const mins = totalMins % 60;
   if (hours > 0) {
-    return `${hours} hour${hours > 1 ? 's' : ''} ${mins} minute${mins !== 1 ? 's' : ''}`;
+    return `${hours}h ${mins}m`;
   }
-  return `${mins} minute${mins !== 1 ? 's' : ''}`;
+  return `${mins}m`;
 }
 
 function updateUsageUI() {
@@ -872,7 +865,7 @@ function updateUsageUI() {
   const usageProg    = document.getElementById('usage-progress') || (els ? els.usageProgress : null);
 
   if (state.authToken) {
-    // Signed-in user: 50 extractions per day
+    // Signed-in user: 50 extractions per day + live countdown
     const limit = 50;
     const used = state.authUsed !== null
       ? state.authUsed
@@ -880,36 +873,33 @@ function updateUsageUI() {
 
     const isDailyLimitReached = (used >= limit) || (state.authRemaining === 0);
 
+    const now = Date.now();
+    const resetTime = state.authResetAt || (now + 24 * 60 * 60 * 1000);
+    const remainingMs = Math.max(0, resetTime - now);
+    const countdownStr = formatCountdown(remainingMs);
+
     if (isDailyLimitReached) {
-      const now = Date.now();
-      const resetTime = state.authResetAt || (now + 24 * 60 * 60 * 1000);
-      const remainingMs = Math.max(0, resetTime - now);
-      const countdownStr = formatCountdown(remainingMs);
-
       if (usageTextEl) {
-        usageTextEl.innerHTML = `<span style="color:#ef4444;font-weight:700">Daily limit reached</span> — resets in ${countdownStr}`;
-      }
-
-      if (!countdownInterval) {
-        countdownInterval = setInterval(() => {
-          if (state.authToken && ((state.authUsed !== null && state.authUsed >= 50) || state.authRemaining === 0)) {
-            updateUsageUI();
-          } else {
-            clearInterval(countdownInterval);
-            countdownInterval = null;
-          }
-        }, 30000);
+        usageTextEl.innerHTML = `<span style="color:#ef4444;font-weight:700">Daily limit reached (${used}/50)</span> · Resets in ${countdownStr}`;
       }
     } else {
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-        countdownInterval = null;
-      }
       if (usageTextEl) {
-        usageTextEl.innerHTML = `<span class="count" id="usage-count">${used}</span> / ${limit} extractions per day · Resets every 24 hours`;
+        usageTextEl.innerHTML = `<span class="count" id="usage-count">${used}</span> / ${limit} extractions today · Resets in ${countdownStr}`;
       } else if (usageCountEl) {
         usageCountEl.textContent = used;
       }
+    }
+
+    // Set up live countdown interval to update text every 30s
+    if (!countdownInterval) {
+      countdownInterval = setInterval(() => {
+        if (state.authToken) {
+          updateUsageUI();
+        } else {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+      }, 30000);
     }
 
     const pct = Math.min(100, Math.max(0, (used / limit) * 100));
@@ -928,7 +918,7 @@ function updateUsageUI() {
       usageProg.setAttribute('aria-valuenow', String(used));
     }
   } else {
-    // Anonymous user: 25 free extractions — no account needed
+    // Anonymous user: 25 free extractions · No account needed
     if (countdownInterval) {
       clearInterval(countdownInterval);
       countdownInterval = null;
@@ -939,11 +929,11 @@ function updateUsageUI() {
 
     if (isAnonLimitReached) {
       if (usageTextEl) {
-        usageTextEl.innerHTML = `You've used all 25 free extractions — <button type="button" class="btn btn-primary btn-xs" onclick="openAuthModal({fromLimit:true})" style="font-size:12px;padding:2px 10px;margin-left:6px;display:inline-flex;vertical-align:middle">Sign in for 50/day</button>`;
+        usageTextEl.innerHTML = `You've used all 25 free extractions — <button type="button" class="btn btn-primary btn-xs" onclick="openAuthModal({fromLimit:true})" style="font-size:12px;padding:2px 10px;margin-left:6px;display:inline-flex;vertical-align:middle">Sign in for 50/day + code history</button>`;
       }
     } else {
       if (usageTextEl) {
-        usageTextEl.innerHTML = `<span class="count" id="usage-count">${n}</span> / ${limit} free extractions used · No account needed`;
+        usageTextEl.innerHTML = `<span class="count" id="usage-count">${n}</span> / ${limit} free extractions · No account needed`;
       } else if (usageCountEl) {
         usageCountEl.textContent = n;
       }

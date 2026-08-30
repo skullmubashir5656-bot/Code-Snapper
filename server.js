@@ -382,6 +382,24 @@ if (!isTursoActive) {
         created_at INTEGER NOT NULL
       );
     `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT NOT NULL,
+        description TEXT,
+        timestamp TEXT NOT NULL,
+        user_email TEXT,
+        page TEXT
+      );
+      CREATE TABLE IF NOT EXISTS ratings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stars INTEGER NOT NULL,
+        feedback TEXT,
+        user_email TEXT NOT NULL DEFAULT 'anonymous',
+        timestamp TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+    `);
 
     // If connected to external Turso and Turso users table is empty, auto-migrate existing local SQLite users
     if (isTursoActive) {

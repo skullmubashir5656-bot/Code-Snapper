@@ -109,7 +109,7 @@
 <div id="hero-panel">
   <p class="hero-badge">
     <span class="badge-pulse"></span>
-    AI-Powered · Vision LLM · Zero Storage
+    AI-Powered · Vision LLM · Images Never Stored
   </p>
 
   <h1 class="hero-title">
@@ -207,7 +207,7 @@
     <!-- Sign In / Sign Up Promo Callout for Anonymous Users -->
     <div class="hero-auth-callout" id="hero-auth-callout">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;color:var(--violet-d)" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span>Want 50 extractions per 24 hours?</span>
+      <span>Want 50 extractions/day + code history?</span>
       <button type="button" class="hero-auth-btn" id="hero-signin-btn">Sign in / Create Account</button>
     </div>
   </div>
@@ -907,8 +907,9 @@
     </div>
     <h2 class="modal-title" id="error-modal-title">Extraction failed</h2>
     <p class="modal-desc" id="error-modal-msg">Something went wrong. Please try again.</p>
-    <div class="modal-actions">
+    <div class="modal-actions" style="display:flex;flex-direction:column;gap:8px">
       <button class="btn btn-primary" id="error-retry-btn" style="width:100%;justify-content:center">Try Again</button>
+      <button type="button" class="btn btn-ghost" id="error-report-btn" style="width:100%;justify-content:center;color:var(--txt-3);font-size:13px">Report an Issue</button>
     </div>
   </div>
 </div>
