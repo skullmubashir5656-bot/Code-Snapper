@@ -2109,6 +2109,7 @@ async function callGemini(dataURL) {
     method:  'POST',
     headers,
     body:    JSON.stringify({ imageData: b64, mimeType: mime }),
+    signal:  AbortSignal.timeout ? AbortSignal.timeout(30000) : undefined, // 30s client timeout (> 22s server total timeout)
   });
 
   const data = await resp.json().catch(() => ({}));
@@ -2306,10 +2307,6 @@ async function runExtraction(croppedDataURL) {
     setStep(1);
     els.procStatusText.textContent = 'Preparing & encoding image…';
     setStep(1, true); setStep(2);
-
-    // Deliberate 1.5s pause with "Preparing..." to allow background warmup confirmation
-    els.procStatusText.textContent = 'Preparing…';
-    await new Promise(r => setTimeout(r, 1500));
 
     // Step 2: server-side extraction call with active status updates
     els.procStatusText.textContent = 'Transcribing code with Vision AI…';

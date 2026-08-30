@@ -51,15 +51,14 @@ const WINDOW_MS   = 24 * 60 * 60 * 1000;  // 24-hour rolling window
 const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GEMINI_OPENAI_URL  = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
-// Verified ultra-low-latency models in order of response speed
+// Verified ultra-low-latency models: primary ultra-fast model -> one fast fallback
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite', // ~688ms
-  'gemini-3.5-flash',      // ~1133ms
-  'gemini-3.6-flash',      // ~2004ms
+  'gemini-3.5-flash-lite', // Primary model (fastest response time ~688ms–1400ms, highest success rate)
+  'gemini-3.5-flash',      // Fast reliable fallback
 ];
 
-const PER_MODEL_TIMEOUT_MS       = 5000;  // 5 seconds max per model attempt
-const MAX_IMAGE_TOTAL_TIMEOUT_MS = 20000; // 20 seconds max per image across ALL models combined
+const PER_MODEL_TIMEOUT_MS       = 10000; // 10 seconds max per model attempt (generous for dense vision images)
+const MAX_IMAGE_TOTAL_TIMEOUT_MS = 22000; // 22 seconds max per image across both models combined
 
 const EXTRACTION_PROMPT = `You are CodeSnapper — a precision code extraction engine. Your ONLY task is to transcribe the source code visible in this image.
 
@@ -1792,7 +1791,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   }
 
   if (totalTimeoutExceeded) {
-    console.error(`[CodeSnapper] ✗ Image extraction timed out: exceeded total timeout of 20s (${Date.now() - imageStartTime}ms) across attempted models: ${GEMINI_MODELS.join(', ')}`);
+    console.error(`[CodeSnapper] ✗ Image extraction timed out: exceeded total timeout of 22s (${Date.now() - imageStartTime}ms) across attempted models: ${GEMINI_MODELS.join(', ')}`);
     return res.status(504).json({
       error: 'Extraction took longer than expected. Please try a tighter crop or check your connection.',
       code: 'IMAGE_TIMEOUT',
