@@ -3496,7 +3496,13 @@ function bindEvents() {
   ];
   allModals.forEach(modal => {
     if (modal) modal.addEventListener('click', e => {
-      if (e.target === modal) closeModal(modal);
+      if (e.target === modal) {
+        if (modal.id === 'feedback-modal') {
+          closeFeedbackModal();
+        } else {
+          closeModal(modal);
+        }
+      }
     });
   });
 
@@ -3504,7 +3510,13 @@ function bindEvents() {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       allModals.forEach(modal => {
-        if (modal && !modal.classList.contains('hidden')) closeModal(modal);
+        if (modal && !modal.classList.contains('hidden')) {
+          if (modal.id === 'feedback-modal') {
+            closeFeedbackModal();
+          } else {
+            closeModal(modal);
+          }
+        }
       });
       if (els.historyDrawerWrap && !els.historyDrawerWrap.classList.contains('hidden')) {
         closeHistoryDrawer();
@@ -3521,6 +3533,10 @@ function openFeedbackModal() {
   if (!modal) return;
   const form = els.feedbackForm || document.getElementById('feedback-form');
   if (form) form.reset();
+  const descInput = els.feedbackDesc || document.getElementById('feedback-desc');
+  if (descInput) descInput.value = '';
+  const typeSelect = els.feedbackType || document.getElementById('feedback-type');
+  if (typeSelect) typeSelect.selectedIndex = 0;
   const charCount = els.feedbackCharCount || document.getElementById('feedback-char-count');
   if (charCount) charCount.textContent = '0 / 500';
   const errBox = document.getElementById('feedback-error-container');
@@ -3536,6 +3552,14 @@ function closeFeedbackModal() {
   const modal = els.feedbackModal || document.getElementById('feedback-modal');
   if (!modal) return;
   closeModal(modal);
+  const form = els.feedbackForm || document.getElementById('feedback-form');
+  if (form) form.reset();
+  const descInput = els.feedbackDesc || document.getElementById('feedback-desc');
+  if (descInput) descInput.value = '';
+  const typeSelect = els.feedbackType || document.getElementById('feedback-type');
+  if (typeSelect) typeSelect.selectedIndex = 0;
+  const charCount = els.feedbackCharCount || document.getElementById('feedback-char-count');
+  if (charCount) charCount.textContent = '0 / 500';
   const errBox = document.getElementById('feedback-error-container');
   if (errBox) {
     errBox.style.display = 'none';
