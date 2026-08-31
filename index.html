@@ -545,7 +545,7 @@
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Extract Another
       </button>
-      <button class="btn btn-secondary btn-lg" id="report-issue-result-btn" style="color:var(--txt-2)">
+      <button class="btn btn-secondary btn-lg" id="report-issue-result-btn" onclick="openFeedbackModal(); return false;" style="color:var(--txt-2)">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         Report an Issue
       </button>
@@ -579,7 +579,7 @@
       <span class="footer-sep" aria-hidden="true">&middot;</span>
       <a href="terms.html" class="footer-link">Terms</a>
       <span class="footer-sep" aria-hidden="true">&middot;</span>
-      <button type="button" class="footer-link footer-btn-link" id="footer-report-link">Report an Issue</button>
+      <button type="button" class="footer-link footer-btn-link" id="footer-report-link" onclick="openFeedbackModal(); return false;">Report an Issue</button>
     </nav>
   </div>
 </footer>
@@ -731,7 +731,7 @@
         <textarea id="feedback-desc" class="input" rows="4" maxlength="500" placeholder="e.g., Python indentation was missing on line 4, or semicolon misread as colon..." style="resize:vertical;min-height:90px;font-family:inherit;font-size:13.5px;line-height:1.5"></textarea>
       </div>
 
-      <div id="feedback-error-container" class="hidden" style="margin-top:12px;padding:10px 14px;border-radius:var(--r-md);background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:13px;display:none;align-items:center;justify-content:space-between;gap:8px">
+      <div id="feedback-error-container" class="hidden" hidden style="display:none;margin-top:12px;padding:10px 14px;border-radius:var(--r-md);background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;font-size:13px;align-items:center;justify-content:space-between;gap:8px">
         <span id="feedback-error-text">Couldn't submit report — please try again.</span>
         <button type="button" class="btn btn-ghost" id="feedback-retry-btn" style="min-height:30px;padding:4px 10px;font-size:12px;color:#fff;border-color:rgba(239,68,68,0.4)">Retry</button>
       </div>

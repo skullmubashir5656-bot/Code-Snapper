@@ -3524,7 +3524,11 @@ function openFeedbackModal() {
   const charCount = els.feedbackCharCount || document.getElementById('feedback-char-count');
   if (charCount) charCount.textContent = '0 / 500';
   const errBox = document.getElementById('feedback-error-container');
-  if (errBox) errBox.style.display = 'none';
+  if (errBox) {
+    errBox.style.display = 'none';
+    errBox.classList.add('hidden');
+    errBox.setAttribute('hidden', 'true');
+  }
   openModal(modal);
 }
 
@@ -3533,7 +3537,11 @@ function closeFeedbackModal() {
   if (!modal) return;
   closeModal(modal);
   const errBox = document.getElementById('feedback-error-container');
-  if (errBox) errBox.style.display = 'none';
+  if (errBox) {
+    errBox.style.display = 'none';
+    errBox.classList.add('hidden');
+    errBox.setAttribute('hidden', 'true');
+  }
   if (window.location.hash) {
     history.replaceState(null, '', window.location.pathname + window.location.search);
   }
@@ -3582,7 +3590,11 @@ async function handleFeedbackSubmit(e) {
   const type = typeEl ? typeEl.value : 'Other';
   const desc = descEl ? descEl.value.trim() : '';
 
-  if (errBox) errBox.style.display = 'none';
+  if (errBox) {
+    errBox.style.display = 'none';
+    errBox.classList.add('hidden');
+    errBox.setAttribute('hidden', 'true');
+  }
 
   if (submitBtn) {
     submitBtn.disabled = true;
@@ -3626,6 +3638,8 @@ async function handleFeedbackSubmit(e) {
     } catch {}
 
     if (errBox) {
+      errBox.classList.remove('hidden');
+      errBox.removeAttribute('hidden');
       errBox.style.display = 'flex';
       if (errText) errText.textContent = "Couldn't submit report — please try again";
       if (retryBtn) {
