@@ -54,7 +54,8 @@ const state = {
   batchResults:  [],           // Array of { id, name, sizeStr, img, dataURL, croppedDataURL, success, error, code, html, lang, ambiguities, raw }
   activeBatchIdx: 0,           // Currently viewed tab index in batch result
 
-  // Auth
+  // Auth & Usage
+  anonCount:     null,         // number or null (from /api/anon/status)
   authToken:     null,         // JWT string or null
   authEmail:     null,         // signed-in email
   authRemaining: null,         // extractions remaining this window (number or null)
@@ -368,6 +369,53 @@ async function fetchUserUsage() {
   return null;
 }
 
+/* Fetch anonymous user's exact usage from server (/api/anon/status) */
+async function fetchAnonStatus() {
+  try {
+    const res = await fetch('/api/anon/status');
+    if (res.ok) {
+      const data = await res.json();
+      state.anonCount = data.count ?? 0;
+      updateUsageUI();
+      return data;
+    }
+  } catch (err) {
+    console.warn('[AnonStatus] Could not fetch anonymous usage:', err.message);
+  }
+  updateUsageUI();
+  return null;
+}
+
+/* Verify auth state on page load and fetch appropriate counter (Bug 2 Fix) */
+async function checkAuthStateAndUsage() {
+  const usageTextEl = document.getElementById('usage-text') || (els ? els.usageText : null);
+  if (usageTextEl) {
+    usageTextEl.innerHTML = `<span class="count">…</span> Checking usage…`;
+  }
+
+  loadAuth();
+
+  if (state.authToken) {
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${state.authToken}` }
+      });
+      if (res.ok) {
+        const d = await res.json();
+        state.authRemaining = d.remaining;
+        await fetchUserUsage();
+        return;
+      }
+    } catch {
+      /* network error — keep cached state if valid */
+    }
+  }
+
+  // Unauthenticated or invalid token -> clear auth and fetch anonymous status from server
+  clearAuth();
+  await fetchAnonStatus();
+}
+
 /* Verify JWT with server and refresh remaining count */
 async function refreshAuthState() {
   if (!state.authToken) return;
@@ -382,6 +430,7 @@ async function refreshAuthState() {
     } else {
       // token expired or account gone
       clearAuth();
+      await fetchAnonStatus();
     }
   } catch { /* offline — keep cached state */ }
 }
@@ -842,7 +891,8 @@ function getCount()  { return parseInt(localStorage.getItem(STORAGE_KEY_CNT) || 
 function incCount()  { localStorage.setItem(STORAGE_KEY_CNT, String(getCount() + 1)); }
 function isLimited() {
   if (state.authToken) return false; // signed-in: server decides
-  return getCount() >= MAX_ANON_EXTRACTIONS;
+  const n = (state.anonCount !== null && state.anonCount !== undefined) ? state.anonCount : getCount();
+  return n >= MAX_ANON_EXTRACTIONS;
 }
 
 let countdownInterval = null;
@@ -924,7 +974,7 @@ function updateUsageUI() {
       countdownInterval = null;
     }
     const limit = MAX_ANON_EXTRACTIONS || 25;
-    const n = getCount();
+    const n = (state.anonCount !== null && state.anonCount !== undefined) ? state.anonCount : getCount();
     const isAnonLimitReached = n >= limit;
 
     if (isAnonLimitReached) {
@@ -2399,15 +2449,14 @@ async function runExtraction(croppedDataURL) {
     const { html, lang } = highlightCode(resolvedCode, resolvedLang);
     setStep(4, true);
 
-    // Increment counter (anon in localStorage, signed-in synced with server)
+    // Update counter from server immediately upon extraction success (Bug 1 & Bug 3 Fix)
     if (!state.authToken) {
       incCount();
-      updateUsageUI();
+      await fetchAnonStatus();
       checkAndPromptRating();
     } else {
       if (state.authUsed !== null) state.authUsed++;
-      updateUsageUI();
-      fetchUserUsage();
+      await fetchUserUsage();
 
       // Save to extraction history exactly ONCE upon confirmed success
       if (resolvedCode) {
@@ -2609,11 +2658,11 @@ async function runBatchExtraction() {
       // Count extraction
       if (!state.authToken) {
         incCount();
-        updateUsageUI();
+        await fetchAnonStatus();
         checkAndPromptRating();
       } else {
         if (state.authUsed !== null) state.authUsed++;
-        updateUsageUI();
+        await fetchUserUsage();
       }
     } catch (err) {
       // Record failure for this specific item and continue batch
@@ -2642,7 +2691,9 @@ async function runBatchExtraction() {
   els.batchProgressFill.style.width = '100%';
 
   if (state.authToken) {
-    fetchUserUsage();
+    await fetchUserUsage();
+  } else {
+    await fetchAnonStatus();
   }
 
   showBatchResults();
@@ -3048,6 +3099,11 @@ function resetToHero() {
     Original
   `;
   showPanel('hero');
+  if (!state.authToken) {
+    fetchAnonStatus();
+  } else {
+    fetchUserUsage();
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -3798,12 +3854,13 @@ async function checkServerConnection(isRetry = false) {
    INIT
 ═══════════════════════════════════════════════ */
 function init() {
-  loadAuth();
   bindEvents();
-  updateUsageUI();
-  updateUserPill();
   showPanel('hero');
   checkServerConnection();
+
+  // Check auth state FIRST via GET /api/auth/me before rendering counter (Bug 2 Fix)
+  checkAuthStateAndUsage().then(updateUserPill);
+
   // Silently warm up the Gemini connection immediately on load
   fetch('/warmup').catch(() => {});
 
@@ -3818,10 +3875,6 @@ function init() {
   // Clear any report hash from URL on refresh so modal never auto-opens
   if (window.location.hash === '#report-issue' || window.location.hash === '#report') {
     history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-  // Verify token with server in the background
-  if (state.authToken) {
-    refreshAuthState().then(updateUserPill);
   }
 
   // Ensure error modal and feedback modals are strictly closed on initial page load
