@@ -243,14 +243,33 @@ async function refreshTokenIfNeeded(force = false) {
 async function getGeminiToken() {
   await refreshTokenIfNeeded(false);
 
+  const isSaMode = !!(findServiceAccountRaw() || process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
   if (!_cachedToken || _cachedToken === 'your_gemini_api_key_here') {
     const err = new Error('No Gemini API key or credentials configured.');
     err.code = 'SERVER_CONFIG_ERROR';
     throw err;
   }
 
+  if (isSaMode) {
+    // Service account mode — NEVER use GEMINI_API_KEY
+    // getValidToken() must ALWAYS use google-auth-library OAuth bearer tokens
+    // Throw error if getValidToken() returns anything starting with AQ. or AIza
+    if (_cachedToken.startsWith('AQ.') || _cachedToken.startsWith('AIza')) {
+      const err = new Error('Service account mode is active, but a static API key was detected instead of an OAuth bearer token.');
+      err.code = 'INVALID_CREDENTIAL_TYPE';
+      throw err;
+    }
+    return {
+      token: _cachedToken,
+      mode: 'service-account',
+      isBearer: true,
+      format: 'OAuth (ya29)',
+    };
+  }
+
   let tokenToUse = _cachedToken;
-  let isBearer = _isServiceAccountActive || _cachedToken.startsWith('ya29.');
+  let isBearer = _cachedToken.startsWith('ya29.');
 
   // If service account is NOT active, check if static key is configured
   if (!_isServiceAccountActive) {

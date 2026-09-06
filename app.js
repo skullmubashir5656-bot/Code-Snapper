@@ -2935,33 +2935,62 @@ function calculateCameraSessionLimit() {
   return { remaining, maxAllowed, limit };
 }
 
-function updateCameraCounters(activeCount = 0, inReview = false) {
-  const maxPhotos = state.cameraSessionLimit || (state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON);
-  
+/* ═══════════════════════════════════════════════
+   UNIFIED CAMERA UI UPDATER
+   Single source of truth for all camera UI state
+═══════════════════════════════════════════════ */
+function updateCameraUI(inReview = true) {
+  const totalCount = capturedPhotos.length;
+  const sessionLimit = state.cameraSessionLimit || (state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON);
+
+  // 1. Done button labels (mobile review + desktop live toolbar)
+  if (els.cameraConfirmLbl) {
+    els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
+  }
+  if (els.cameraLiveDoneCount) {
+    els.cameraLiveDoneCount.textContent = String(totalCount);
+  }
+  if (els.cameraLiveDoneBtn) {
+    if (totalCount > 0 && !inReview) {
+      els.cameraLiveDoneBtn.classList.remove('hidden');
+    } else {
+      els.cameraLiveDoneBtn.classList.add('hidden');
+    }
+  }
+
+  // 2. Photo X of Y badge & Live Viewfinder badge
   if (els.cameraCounterBadge) {
-    if (activeCount === 0) {
+    if (totalCount === 0) {
       els.cameraCounterBadge.classList.add('hidden');
       if (els.cameraBadge) els.cameraBadge.classList.remove('hidden');
     } else {
       els.cameraCounterBadge.classList.remove('hidden');
       els.cameraCounterBadge.textContent = inReview
-        ? `Photo ${activeCount} of ${maxPhotos}`
-        : `${activeCount} / ${maxPhotos} captured`;
+        ? `Photo ${totalCount} of ${sessionLimit}`
+        : `${totalCount} / ${sessionLimit} captured`;
       if (els.cameraBadge) els.cameraBadge.classList.add('hidden');
     }
   }
 
-  if (els.cameraLiveDoneBtn) {
-    if (activeCount > 0 && !inReview) {
-      els.cameraLiveDoneBtn.classList.remove('hidden');
-      if (els.cameraLiveDoneCount) {
-        els.cameraLiveDoneCount.textContent = String(activeCount);
+  // 3. Add Another button & Limit reached message
+  if (totalCount >= sessionLimit) {
+    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
+    if (els.cameraLimitMsg) {
+      els.cameraLimitMsg.classList.remove('hidden');
+      if (els.cameraLimitText) {
+        els.cameraLimitText.textContent = `Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session`;
       }
-    } else {
-      els.cameraLiveDoneBtn.classList.add('hidden');
     }
+  } else {
+    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
+    if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
   }
+
+  // 4. Thumbnail strip
+  renderCameraStrip();
 }
+
+const updateCameraCounters = updateCameraUI;
 
 function renderCameraStrip() {
   if (!els.cameraStripWrap || !els.cameraStripScroll) return;
@@ -2990,28 +3019,23 @@ function renderCameraStrip() {
 function removeCapturedPhoto(id) {
   capturedPhotos = capturedPhotos.filter(p => p.id !== id);
   console.log('[Camera] Removed photo, remaining in session:', capturedPhotos.length);
-  renderCameraStrip();
 
-  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
   const totalCount = capturedPhotos.length;
-  if (els.cameraConfirmLbl) {
-    els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
-  }
-
-  if (totalCount < sessionLimit) {
-    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
-    if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
-  }
-
   if (totalCount === 0) {
+    capturedBlob = null;
+    hideBlurBanner();
     closeCameraModal();
-  } else {
-    // Show latest photo in preview
-    if (els.cameraPreviewImg) {
-      els.cameraPreviewImg.src = capturedPhotos[totalCount - 1].dataURL;
-    }
-    updateCameraCounters(totalCount, true);
+    return;
   }
+
+  // Show latest remaining photo in preview
+  const lastPhoto = capturedPhotos[totalCount - 1];
+  capturedBlob = lastPhoto.blob;
+  if (els.cameraPreviewImg) {
+    els.cameraPreviewImg.src = lastPhoto.dataURL || lastPhoto.url;
+  }
+
+  updateCameraUI(true);
 }
 window.removeCapturedPhoto = removeCapturedPhoto;
 
@@ -3241,23 +3265,8 @@ async function handleNativeCameraCapture(file) {
     // Blur detection check
     await checkAndApplyBlurNotice(dataURL);
 
-    if (els.cameraConfirmLbl) {
-      els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
-    }
-
-    if (totalCount >= sessionLimit) {
-      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
-      if (els.cameraLimitMsg) {
-        els.cameraLimitMsg.classList.remove('hidden');
-        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session`;
-      }
-    } else {
-      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
-      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
-    }
-
-    renderCameraStrip();
-    updateCameraCounters(totalCount, true);
+    // Unified UI update
+    updateCameraUI(true);
     openModal(els.cameraModal);
   } catch (err) {
     console.error('[NativeCamera] Error processing captured file:', err);
@@ -3308,12 +3317,7 @@ async function startCamera(facing = 'environment') {
   if (els.cameraLiveDot) {
     els.cameraLiveDot.style.display = 'block';
   }
-  if (els.cameraLimitMsg) {
-    els.cameraLimitMsg.classList.add('hidden');
-  }
-
-  renderCameraStrip();
-  updateCameraCounters(capturedPhotos.length, false);
+  updateCameraUI(false);
 
   openModal(els.cameraModal);
 
@@ -3394,9 +3398,7 @@ function closeCameraModal() {
   capturedPhotos = [];
   state.cameraSessionLimit = null;
   hideBlurBanner();
-  renderCameraStrip();
-  updateCameraCounters(0, false);
-  if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+  updateCameraUI(false);
   closeModal(els.cameraModal);
 }
 
@@ -3469,23 +3471,8 @@ function capturePhoto() {
     // Run blur detection check
     await checkAndApplyBlurNotice(previewUrl);
 
-    if (els.cameraConfirmLbl) {
-      els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
-    }
-
-    if (totalCount >= sessionLimit) {
-      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
-      if (els.cameraLimitMsg) {
-        els.cameraLimitMsg.classList.remove('hidden');
-        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session`;
-      }
-    } else {
-      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
-      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
-    }
-
-    renderCameraStrip();
-    updateCameraCounters(totalCount, true);
+    // Unified UI update
+    updateCameraUI(true);
   }, 'image/png', 0.95);
 }
 
@@ -3496,22 +3483,9 @@ function retakePhoto() {
     console.log('[Camera] Retook latest photo, remaining in session:', capturedPhotos.length);
   }
   capturedBlob = null;
-  renderCameraStrip();
-
-  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
-  const totalCount = capturedPhotos.length;
-  console.log(`[Camera] After retake — Captures: ${totalCount}, Session limit: ${sessionLimit}`);
-
-  if (els.cameraConfirmLbl) {
-    els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
-  }
-
-  if (totalCount < sessionLimit) {
-    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
-    if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
-  }
 
   if (isMobileDevice()) {
+    updateCameraUI(true);
     if (els.cameraFileInput) {
       els.cameraFileInput.value = '';
       els.cameraFileInput.click();
@@ -3539,11 +3513,8 @@ function retakePhoto() {
   if (els.cameraLiveDot) {
     els.cameraLiveDot.style.display = 'block';
   }
-  if (els.cameraLimitMsg) {
-    els.cameraLimitMsg.classList.add('hidden');
-  }
 
-  updateCameraCounters(capturedPhotos.length, false);
+  updateCameraUI(false);
 }
 
 function addAnotherPhoto() {
@@ -3656,34 +3627,51 @@ async function confirmPhoto() {
 ═══════════════════════════════════════════════ */
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function resetToHero() {
-  state.uploadedFile = null;
-  state.uploadedImg  = null;
+function resetToUploadState() {
+  // Hide error modal and other transient modals
+  if (els.errorModal) closeModal(els.errorModal);
+  if (els.cameraModal) closeCameraModal();
+  if (els.feedbackModal) closeFeedbackModal();
+
+  state.uploadedFile    = null;
+  state.uploadedImg     = null;
   state.uploadedDataURL = null;
   state.croppedDataURL  = null;
   state.extractedCode   = '';
+  state.rawResponse     = '';
+  state.detectedLang    = 'plaintext';
+  state.ambiguities     = [];
   state.isBatch         = false;
   state.batchItems      = [];
   state.batchResults    = [];
   state.activeBatchIdx  = 0;
+  capturedPhotos        = [];
+  capturedBlob          = null;
+  state.cameraSessionLimit = null;
 
-  if (state.autoCropper)  { state.autoCropper.destroy();  state.autoCropper = null; }
+  if (state.autoCropper)   { state.autoCropper.destroy();  state.autoCropper = null; }
   if (state.manualCropper) { state.manualCropper = null; }
 
-  els.fileInput.value = '';
+  if (els.fileInput) els.fileInput.value = '';
+  if (els.cameraFileInput) els.cameraFileInput.value = '';
+  if (els.cropPreviewImg) els.cropPreviewImg.src = '';
+  if (els.originalImgDisp) els.originalImgDisp.src = '';
+
   els.batchProgressWrap?.classList.add('hidden');
   els.batchTabsBar?.classList.add('hidden');
   els.batchItemError?.classList.add('hidden');
   document.getElementById('code-window')?.classList.remove('hidden');
   els.copyBtn?.classList.remove('hidden');
-  els.processingTitle.textContent = 'Extracting your code…';
+  if (els.processingTitle) els.processingTitle.textContent = 'Extracting your code…';
 
-  els.originalCompare.classList.add('hidden');
-  els.viewOriginalBtn.textContent = '';
-  els.viewOriginalBtn.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-    Original
-  `;
+  els.originalCompare?.classList.add('hidden');
+  if (els.viewOriginalBtn) {
+    els.viewOriginalBtn.textContent = '';
+    els.viewOriginalBtn.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      Original
+    `;
+  }
   showPanel('hero');
   if (!state.authToken) {
     fetchAnonStatus();
@@ -3691,6 +3679,8 @@ function resetToHero() {
     fetchUserUsage();
   }
 }
+
+const resetToHero = resetToUploadState;
 
 /* ═══════════════════════════════════════════════
    EVENT LISTENERS
@@ -3968,15 +3958,16 @@ function bindEvents() {
     els.viewOriginalBtn.innerHTML = icon;
   });
 
-  els.tryAgainBtn.addEventListener('click', () => {
-    if (state.isBatch) {
-      showPanel('batch-preview');
-    } else {
-      showPanel('crop-select');
+  /* ── Document-level delegation for Try Again / Retry buttons ── */
+  document.addEventListener('click', e => {
+    const btn = e.target && e.target.closest ? e.target.closest('#try-again-btn, #error-retry-btn') : null;
+    if (btn) {
+      e.preventDefault();
+      resetToUploadState();
     }
   });
 
-  els.extractAnotherBtn.addEventListener('click', resetToHero);
+  els.extractAnotherBtn.addEventListener('click', resetToUploadState);
 
   /* ── Auth modal ── */
   els.tabSignin.addEventListener('click', () => switchAuthTab('signin'));
@@ -4029,10 +4020,6 @@ function bindEvents() {
   /* ── Error modal ── */
   els.errorModalClose.addEventListener('click',  () => closeModal(els.errorModal));
   els.errorModalCancel.addEventListener('click', () => closeModal(els.errorModal));
-  els.errorRetryBtn.addEventListener('click', () => {
-    closeModal(els.errorModal);
-    resetToHero();
-  });
   if (els.errorReportBtn) {
     els.errorReportBtn.addEventListener('click', () => {
       closeModal(els.errorModal);
