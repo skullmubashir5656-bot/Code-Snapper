@@ -844,18 +844,20 @@
 
       <!-- Post-Capture Review Mode -->
       <div class="camera-review-controls hidden" id="camera-review-controls">
-        <button type="button" class="btn btn-secondary" id="camera-retake-btn">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
-          Retake
-        </button>
-        <button type="button" class="btn btn-secondary" id="camera-add-another-btn">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Another
-        </button>
-        <button type="button" class="btn btn-primary" id="camera-confirm-btn">
+        <button type="button" class="btn btn-primary btn-camera-done" id="camera-confirm-btn">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           <span id="camera-confirm-lbl">Done (1 photo)</span>
         </button>
+        <div class="camera-review-sub-row">
+          <button type="button" class="btn btn-secondary btn-camera-retake" id="camera-retake-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
+            Retake
+          </button>
+          <button type="button" class="btn btn-secondary btn-camera-add" id="camera-add-another-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>+ Add Photo</span>
+          </button>
+        </div>
       </div>
     </div>
 

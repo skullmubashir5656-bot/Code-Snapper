@@ -1433,7 +1433,7 @@ async function handleBatchFiles(files) {
         file,
         img,
         dataURL,
-        name: file.name,
+        name: file.displayName || (file.name ? file.name.replace(/\.[^/.]+$/, '') : 'Screenshot'),
         sizeStr,
         resolution
       });
@@ -2572,11 +2572,6 @@ async function runBatchExtraction() {
     const num = i + 1;
     const progressPct = Math.round(((i) / total) * 100);
 
-    // 2-second delay between sequential batch images to prevent hitting rate limits
-    if (i > 0) {
-      if (els.batchProgressLabel) els.batchProgressLabel.textContent = 'Pacing next extraction (2s)…';
-      await delay(2000);
-    }
 
     if (els.batchProcThumb) els.batchProcThumb.src = item.dataURL;
     if (els.batchProcBadge) els.batchProcBadge.textContent = `Image ${num} of ${total}`;
@@ -3273,9 +3268,13 @@ async function confirmPhoto() {
     }
   }
 
-  const files = capturedPhotos.map((p, idx) =>
-    new File([p.blob], `camera_snap_${Date.now()}_${idx + 1}.png`, { type: 'image/png' })
-  );
+  const isMulti = capturedPhotos.length > 1;
+  const files = capturedPhotos.map((p, idx) => {
+    const cleanName = isMulti ? `Camera Photo ${idx + 1}` : 'Camera Photo';
+    const f = new File([p.blob], `${cleanName}.png`, { type: 'image/png' });
+    f.displayName = cleanName;
+    return f;
+  });
 
   closeCameraModal();
   await handleFiles(files);
