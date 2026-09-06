@@ -1494,7 +1494,7 @@ function renderBatchPreview() {
   // Calculate upfront remaining quota
   const remaining = state.authToken
     ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - getCount());
+    : (state.anonRemaining !== null ? state.anonRemaining : 0);
 
   if (remaining < count) {
     els.batchLimitWarning.classList.remove('hidden');
@@ -2571,15 +2571,22 @@ async function runBatchExtraction() {
   const count = state.batchItems.length;
   if (count === 0) return;
 
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - getCount());
+  let remaining = 0;
+  if (state.authToken) {
+    await fetchUserUsage();
+    remaining = (state.authRemaining !== null && state.authRemaining !== undefined) ? Number(state.authRemaining) : 50;
+  } else {
+    const statusData = await fetchAnonStatus();
+    remaining = (statusData && statusData.remaining !== undefined) ? Number(statusData.remaining) : (state.anonRemaining !== null ? Number(state.anonRemaining) : 0);
+  }
 
+  // Explicit zero check BEFORE Math.min or slicing
   if (remaining <= 0) {
     if (state.authToken) {
       showError('You have reached your daily quota of 50 extractions. Please wait until your quota resets in 24 hours.', 'Daily Quota Reached');
     } else {
       openAuthModal({ fromLimit: true });
+      showToast("You've used all 25 free extractions. Sign in for 50/day.", 'error');
     }
     return;
   }
@@ -3592,26 +3599,47 @@ function addAnotherPhoto() {
 async function confirmPhoto() {
   if (capturedPhotos.length === 0) return;
 
-  const count = capturedPhotos.length;
-  const remaining = getRemainingExtractions();
-
-  if (count > remaining) {
-    if (!state.authToken) {
-      closeCameraModal();
-      openAuthModal({ fromLimit: true });
-      showToast(`You have ${remaining} extraction${remaining === 1 ? '' : 's'} remaining. Sign in for 50/day.`, 'error');
-      return;
-    } else {
-      showToast(`You have ${remaining} extraction${remaining === 1 ? '' : 's'} remaining today, but selected ${count} photos.`, 'error');
-      if (remaining === 0) {
-        closeCameraModal();
-        return;
-      }
-    }
+  // 1. Fetch fresh remaining count from /api/anon/status (never use cached state)
+  let remaining = 0;
+  if (!state.authToken) {
+    const statusData = await fetchAnonStatus();
+    remaining = (statusData && statusData.remaining !== undefined) ? Number(statusData.remaining) : (state.anonRemaining !== null ? Number(state.anonRemaining) : 0);
+  } else {
+    await fetchUserUsage();
+    remaining = (state.authRemaining !== null && state.authRemaining !== undefined) ? Number(state.authRemaining) : 50;
   }
 
-  const isMulti = capturedPhotos.length > 1;
-  const files = capturedPhotos.map((p, idx) => {
+  const count = capturedPhotos.length;
+
+  // 2. If remaining === 0:
+  //    -> Do NOT start extraction at all
+  //    -> Show sign-in prompt immediately: "You've used all 25 free extractions"
+  //    -> Stop here
+  if (remaining <= 0) {
+    closeCameraModal();
+    if (!state.authToken) {
+      openAuthModal({ fromLimit: true });
+      showToast("You've used all 25 free extractions. Sign in for 50/day.", 'error');
+    } else {
+      showToast('Daily extraction limit reached (50/day). Please wait for window reset.', 'error');
+    }
+    return;
+  }
+
+  // 3. If remaining > 0 but less than captured photos count:
+  //    -> Show warning: "You have X extractions remaining — only first X photos will be extracted"
+  //    -> Slice captures array to first X items: captures = captures.slice(0, remaining)
+  //    -> Start batch extraction with sliced array
+  //    -> Each extraction MUST actually run and produce a result tab
+  let photosToExtract = capturedPhotos;
+  if (count > remaining) {
+    showToast(`You have ${remaining} extraction${remaining > 1 ? 's' : ''} remaining — only first ${remaining} photo${remaining > 1 ? 's' : ''} will be extracted.`, 'info');
+    photosToExtract = capturedPhotos.slice(0, remaining);
+  }
+
+  // 4. If remaining >= captured photos count: extract all photos normally
+  const isMulti = photosToExtract.length > 1;
+  const files = photosToExtract.map((p, idx) => {
     const cleanName = isMulti ? `Camera Photo ${idx + 1}` : 'Camera Photo';
     const f = new File([p.blob], `${cleanName}.png`, { type: 'image/png' });
     f.displayName = cleanName;

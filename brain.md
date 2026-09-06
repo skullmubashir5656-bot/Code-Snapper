@@ -66,12 +66,17 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 ## Camera Multi-Capture Bug (FIXED — do not reintroduce)
 - **Bug**: each new capture was replacing previous capture instead of appending
 - **Fix**: captures stored in persistent array `[]` — Add Photo PUSHES to array, never replaces it
-- **Bug**: anonymous users hitting sign-in wall mid-session incorrectly
-- **Fix**: check extraction limit BEFORE starting capture session, not after Done is clicked
-  - If user has 0 extractions remaining → show sign-in prompt immediately when camera opens
-  - If user has N remaining → allow up to `min(N, 5)` captures, warn before starting
-  - Never interrupt mid-capture session with sign-in prompt
-  - Only check limit again when "Done" is clicked to confirm enough extractions remain for the batch
+- **Fix**: check extraction limit BEFORE starting capture session and on Done click:
+  - If user has 0 extractions remaining when camera opens or when Done is clicked:
+    - Do NOT start extraction at all
+    - Show sign-in prompt immediately: "You've used all 25 free extractions"
+    - Stop execution
+  - If user has X extractions remaining (where X < captured photos count):
+    - Warn: "You have X extractions remaining — only first X photos will be extracted"
+    - Slice captures array to first X items (`captures.slice(0, remaining)`)
+    - Process sliced array into batch results
+  - If user has >= captured photos count:
+    - Extract all photos normally
 
 ## Batch Processing
 - **Max limit**: 5 images anonymous, 10 signed-in (applies to both file upload AND camera captures)

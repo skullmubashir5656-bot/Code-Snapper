@@ -1474,10 +1474,11 @@ async function tryOpenAIEndpoint(model, token, mimeType, imageData, timeoutMs = 
 }
 
 async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs = PER_MODEL_TIMEOUT_MS) {
-  const url = isBearer
+  const isActuallyBearer = isBearer || (typeof token === 'string' && token.startsWith('ya29.'));
+  const url = isActuallyBearer
     ? `${GEMINI_NATIVE_BASE}/${model}:generateContent`
     : `${GEMINI_NATIVE_BASE}/${model}:generateContent?key=${token}`;
-  const headers = isBearer
+  const headers = isActuallyBearer
     ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
     : { 'Content-Type': 'application/json' };
   const res  = await fetch(url, {
@@ -1560,10 +1561,12 @@ app.get('/warmup', async (_req, res) => {
 app.post('/api/extract', authenticate, async (req, res) => {
   const imageStartTime = Date.now();
 
-  /* ── 1. Get a fresh Gemini token (auto-refreshed for service accounts) ── */
-  let cred;
+  const useServiceAccount = !!(findServiceAccountRaw() || process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+
+  /* ── 1. Initial Gemini token verification (auto-refreshed for service accounts) ── */
+  let initialCred;
   try {
-    cred = await getGeminiToken();
+    initialCred = await getGeminiToken();
   } catch (e) {
     const code = e.code || 'SERVER_CONFIG_ERROR';
     console.error('[CodeSnapper] ✗ Credential error:', e.message);
@@ -1575,8 +1578,6 @@ app.post('/api/extract', authenticate, async (req, res) => {
     }
     return res.status(500).json({ error: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.', code });
   }
-
-  let { token, mode, isBearer } = cred;
 
   /* ── 2. Auth-aware rate limiting (IP-based for anonymous, account-based for signed-in) ── */
   const clientIp = getClientIp(req);
@@ -1615,7 +1616,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Please upload a valid image file (PNG, JPG, WEBP, GIF).', code: 'BAD_REQUEST' });
 
   const userLabel = req.user ? req.user.email : `anonymous (${clientIp})`;
-  console.log(`\n[CodeSnapper] Extract ← ${userLabel} [cred: ${mode}]`);
+  console.log(`\n[CodeSnapper] Extract ← ${userLabel} [cred: ${initialCred.mode}]`);
 
   /* ── 4. Build native request body ── */
   const nativeBody = {
@@ -1632,8 +1633,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
     ],
   };
 
-  /* ── 5. Try strategies ── */
-  const strategies = isBearer ? ['native', 'openai-compat'] : ['native'];
+  /* ── 5. Try strategies across models ── */
   let hardAuthError = null;
   let rateLimitError = null;
   let totalTimeoutExceeded = false;
@@ -1648,6 +1648,20 @@ app.post('/api/extract', authenticate, async (req, res) => {
     }
     modelIndex++;
 
+    /* ── Refresh/re-fetch token INSIDE the loop for every model attempt ── */
+    let currentCred;
+    try {
+      currentCred = await getGeminiToken();
+    } catch (e) {
+      console.error('[CodeSnapper] ✗ Credential error during model attempt:', e.message);
+      hardAuthError = { type: 'AUTH_ERROR', msg: e.message };
+      break;
+    }
+
+    let modelToken = currentCred.token;
+    let modelIsBearer = currentCred.isBearer;
+    const modelStrategies = modelIsBearer ? ['native', 'openai-compat'] : ['native'];
+
     const elapsedBeforeModel = Date.now() - imageStartTime;
     if (elapsedBeforeModel >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
       console.warn(`[CodeSnapper] ⏱ Image reached 22s total limit (${elapsedBeforeModel}ms). Skipping further model attempts.`);
@@ -1657,7 +1671,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
 
     const currentAttemptTimeoutMs = Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - elapsedBeforeModel);
 
-    for (const strategy of strategies) {
+    for (const strategy of modelStrategies) {
       const elapsedBeforeAttempt = Date.now() - imageStartTime;
       if (elapsedBeforeAttempt >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
         totalTimeoutExceeded = true;
@@ -1667,8 +1681,8 @@ app.post('/api/extract', authenticate, async (req, res) => {
       try {
         console.log(`[CodeSnapper]   ${strategy}/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
         const { res: gemRes, data, endpoint } = strategy === 'openai-compat'
-          ? await tryOpenAIEndpoint(model, token, mimeType, imageData, currentAttemptTimeoutMs)
-          : await tryNativeEndpoint(model, token, isBearer, nativeBody, currentAttemptTimeoutMs);
+          ? await tryOpenAIEndpoint(model, modelToken, mimeType, imageData, currentAttemptTimeoutMs)
+          : await tryNativeEndpoint(model, modelToken, modelIsBearer, nativeBody, currentAttemptTimeoutMs);
 
         if (gemRes.ok) {
           const text = endpoint === 'openai-compat'
@@ -1733,10 +1747,10 @@ app.post('/api/extract', authenticate, async (req, res) => {
             console.log('[Auth] ⚠ Auth error encountered during extraction. Attempting emergency token refresh via service account…');
             try {
               const freshToken = await refreshTokenIfNeeded(true);
-              if (freshToken && freshToken !== token) {
-                token = freshToken;
-                isBearer = freshToken.startsWith('ya29.');
-                console.log(`[Auth] ✓ Emergency token refreshed (${token.slice(0, 10)}…). Retrying request…`);
+              if (freshToken && freshToken !== modelToken) {
+                modelToken = freshToken;
+                modelIsBearer = freshToken.startsWith('ya29.');
+                console.log(`[Auth] ✓ Emergency token refreshed (${modelToken.slice(0, 10)}…). Retrying request…`);
                 continue;
               }
             } catch (refErr) {
