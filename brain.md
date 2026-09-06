@@ -40,19 +40,64 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 - **On limit reached — anonymous**: show sign-in prompt modal (`#auth-modal`)
 - **On limit reached — signed-in**: show "Resets in X hours Y minutes" countdown
 
+## Counter Display Rules
+- On page load: check `GET /api/auth/me` first
+  - 401 = anonymous → fetch `GET /api/anon/status` → show `X/25`
+  - 200 = signed in → fetch `GET /api/user/usage` → show `X/50`
+- Update counter immediately after every successful extraction (no refresh needed)
+- Never show 50 limit to anonymous user
+- Progress bar: green <50%, yellow 50-80%, red 80%+
+
+## Camera Lens Feature
+- **Mobile**: uses native camera via `<input type="file" accept="image/*" capture="environment">` — NO custom viewfinder on mobile
+- **Desktop**: uses `getUserMedia` custom viewfinder
+- **Multi-capture flow**:
+  1. User captures photo → review screen shows (Retake / + Add Photo / Done)
+  2. "Add Photo" re-triggers native camera input, APPENDS to existing captures array — never replaces
+  3. Thumbnail strip shows all captured photos with individual delete (×) buttons
+  4. "Done" sends all captured photos to batch extraction pipeline
+- **Limits**: anonymous = 5 captures, signed-in = 10 captures
+- **Filenames**: "Camera Photo", "Camera Photo 2", etc. — never timestamps or random numbers
+- **Blur detection**: client-side Laplacian variance check before sending — threshold ~50-100
+  - If blurry (< 50): show "Photo looks blurry — please retake for better accuracy" with Retake button — never auto-send blurry image
+  - If borderline (50–100): show "Photo may be blurry — results might be less accurate" with Retake or Use Anyway options
+
+## Camera Multi-Capture Bug (FIXED — do not reintroduce)
+- **Bug**: each new capture was replacing previous capture instead of appending
+- **Fix**: captures stored in persistent array `[]` — Add Photo PUSHES to array, never replaces it
+- **Bug**: anonymous users hitting sign-in wall mid-session incorrectly
+- **Fix**: check extraction limit BEFORE starting capture session, not after Done is clicked
+  - If user has 0 extractions remaining → show sign-in prompt immediately when camera opens
+  - If user has N remaining → allow up to `min(N, 5)` captures, warn before starting
+  - Never interrupt mid-capture session with sign-in prompt
+  - Only check limit again when "Done" is clicked to confirm enough extractions remain for the batch
+
+## Batch Processing
+- **Max limit**: 5 images anonymous, 10 signed-in (applies to both file upload AND camera captures)
+- Each image = 1 extraction from daily limit
+- **Processing**: sequential, 500ms delay between images, auto-crop only
+- **Filenames shown in UI**: original filename for uploads, "Camera Photo X" for camera captures
+- **Results**: tabbed (Image 1, Image 2...), each tab has own Copy button + Copy All button
+
+## Extraction History (signed-in only)
+- Saves **EXACTLY ONCE** per extraction after confirmed success
+- **Auto-name format**: `"[Language] · [Date] [Time in user's local browser timezone]"`
+- **Timestamps**: stored in UTC, displayed in user's local timezone via `toLocaleString()` with `Intl.DateTimeFormat().resolvedOptions().timeZone`
+- **Capacity**: Max 100 entries per user, FIFO when exceeded, auto-delete after 90 days
+- **Rename**: inline input field, Save/Cancel BELOW input (never overlapping)
+
+## Report an Issue
+- Footer link and results page button both call `openFeedbackModal()` directly — not a hash anchor
+- Modal closes on: X button, Cancel button, backdrop click
+- On close: reset form, clear textarea, hide error message, reset dropdown
+- Submits to `POST /api/feedback` → saved to `feedback` SQLite table
+- Admin views at `/admin/feedback` (password protected via `ADMIN_PASSWORD` env var)
+
 ## Database
 - **Turso** (persistent cloud SQLite) when `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` are present in environment variables.
 - Falls back to local SQLite (`codesnapper.db`) only if Turso credentials are missing.
 - **Tables**: `users`, `anon_usage`, `extraction_history`, `feedback`, `ratings`
 - **Case-Insensitive Auth**: Emails are always stored and queried in lowercase (`email.trim().toLowerCase()`).
-
-## Extraction History (Signed-In Users Only)
-- Saves after every successful extraction — **EXACTLY ONCE** per extraction upon confirmed success.
-- **Auto-name format**: `"[Language] · [Date] [Time in user's local timezone]"`
-- **Timezones**: Timestamps are stored in UTC, and displayed in user's browser timezone via JavaScript's `toLocaleString()` with `Intl.DateTimeFormat().resolvedOptions().timeZone`.
-- **Max capacity**: 100 entries per user — oldest deleted when limit is exceeded.
-- **Retention**: Auto-delete entries older than 90 days (`expires_at <= now`).
-- **Renaming**: Users can rename entries inline with dedicated Save / Cancel buttons placed directly below the input (never overlapping).
 
 ## Error Handling Rules
 - **NEVER** show technical terms to users: no "Gemini", "API", "model", "token", "credentials", "auth".
@@ -60,18 +105,6 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 - **NEVER** show retry attempt count or "Retrying" text to users.
 - **ALL** technical details (HTTP status codes, model failure types, stack traces) go to server console logs only.
 - **Friendly error messages only**: `"Extraction failed — please try again"` with a single `"Try Again"` action button.
-
-## Features Checklist
-- **Upload**: File picker + drag-and-drop + `Ctrl+V` paste + mobile camera capture.
-- **Camera**: Multi-capture live viewfinder + mobile rear camera support, up to 5 photos (anonymous) or 10 photos (signed-in) per session with thumbnail preview strip and batch extraction integration.
-- **Batch Processing**: Up to 5 images (anonymous) or 10 images (signed-in), auto-crop only, sequential processing with pacing.
-- **Manual Crop**: Simple drag-to-select viewfinder, no pan/zoom clutter.
-- **Auto Crop**: Fully automatic canvas-based border detection, 0 user interaction required.
-- **History Panel**: Signed-in only, slide-over drawer accessible from header navbar.
-- **Report an Issue**: Footer link and modal, saves to `feedback` table, admin views at `/admin/feedback`.
-- **Rate Us**: Shows after 30th cumulative extraction, one-time only, saves to `ratings` table.
-- **Warmup**: `GET /warmup` endpoint exists for background priming every 30s, with **NO** artificial pre-call delay before user extractions.
-- **Health**: `GET /health` returns auth status, active model chain, db type, and server timestamps.
 
 ## What Must Never Change Without Updating This File
 - State machine transition logic (`showPanel`)

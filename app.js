@@ -2573,8 +2573,10 @@ async function runBatchExtraction() {
   for (let i = 0; i < total; i++) {
     const item = itemsToProcess[i];
     const num = i + 1;
-    const progressPct = Math.round(((i) / total) * 100);
-
+    // 500ms sequential pacing delay between batch images
+    if (i > 0) {
+      await delay(500);
+    }
 
     if (els.batchProcThumb) els.batchProcThumb.src = item.dataURL;
     if (els.batchProcBadge) els.batchProcBadge.textContent = `Image ${num} of ${total}`;
@@ -2932,27 +2934,33 @@ function renderCameraStrip() {
 
 function removeCapturedPhoto(id) {
   capturedPhotos = capturedPhotos.filter(p => p.id !== id);
+  console.log('[Camera] Removed photo, remaining in session:', capturedPhotos.length);
   renderCameraStrip();
 
-  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
 
-  if (capturedBlob !== null) {
-    // In review mode
-    const totalCount = capturedPhotos.length + 1;
-    if (els.cameraConfirmLbl) {
-      els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
-    }
-    if (totalCount < maxPhotos) {
-      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
-      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+  const totalCount = capturedPhotos.length;
+  if (els.cameraConfirmLbl) {
+    els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
+  }
+
+  if (totalCount < sessionLimit) {
+    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
+    if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+  }
+
+  if (totalCount === 0) {
+    closeCameraModal();
+  } else {
+    // Show latest photo in preview
+    if (els.cameraPreviewImg) {
+      els.cameraPreviewImg.src = capturedPhotos[totalCount - 1].dataURL;
     }
     updateCameraCounters(totalCount, true);
-  } else {
-    // In live viewfinder mode
-    updateCameraCounters(capturedPhotos.length, false);
-    if (capturedPhotos.length < maxPhotos) {
-      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
-    }
   }
 }
 window.removeCapturedPhoto = removeCapturedPhoto;
@@ -3078,11 +3086,52 @@ function isMobileDevice() {
          (navigator.maxTouchPoints > 0 && window.innerWidth <= 768);
 }
 
+function openCameraSession() {
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+
+  if (remaining <= 0) {
+    if (!state.authToken) {
+      openAuthModal({ fromLimit: true });
+      showToast("You've used all 25 free extractions. Sign in for 50/day.", 'error');
+    } else {
+      showToast('Daily extraction limit reached (50/day). Please wait for window reset.', 'error');
+    }
+    return;
+  }
+
+  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const sessionLimit = Math.min(remaining, maxBatch);
+
+  // Initialize fresh camera session array
+  capturedPhotos = [];
+  capturedBlob = null;
+  hideBlurBanner();
+
+  console.log(`[Camera] Starting session — remaining extractions: ${remaining}, session capture limit: ${sessionLimit}`);
+
+  if (isMobileDevice()) {
+    if (els.cameraFileInput) {
+      els.cameraFileInput.value = '';
+      els.cameraFileInput.click();
+    }
+  } else {
+    startCamera('environment');
+  }
+}
+
 async function handleNativeCameraCapture(file) {
   if (!file) return;
-  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  if (capturedPhotos.length >= maxPhotos) {
-    showToast(`Maximum ${maxPhotos} photos reached for this session.`, 'error');
+
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
+
+  if (capturedPhotos.length >= sessionLimit) {
+    showToast(`Maximum ${sessionLimit} photos reached for this session.`, 'error');
     return;
   }
 
@@ -3094,7 +3143,14 @@ async function handleNativeCameraCapture(file) {
       reader.readAsDataURL(file);
     });
 
+    const photoObj = {
+      id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      blob: file,
+      dataURL: dataURL
+    };
+    capturedPhotos.push(photoObj);
     capturedBlob = file;
+    console.log('[Camera] Appended photo, total in session:', capturedPhotos.length);
 
     // Show captured image in review mode in camera modal
     if (els.cameraPreviewImg) {
@@ -3117,16 +3173,16 @@ async function handleNativeCameraCapture(file) {
     // Blur detection check
     await checkAndApplyBlurNotice(dataURL);
 
-    const totalCount = capturedPhotos.length + 1;
+    const totalCount = capturedPhotos.length;
     if (els.cameraConfirmLbl) {
       els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
     }
 
-    if (totalCount >= maxPhotos) {
+    if (totalCount >= sessionLimit) {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
       if (els.cameraLimitMsg) {
         els.cameraLimitMsg.classList.remove('hidden');
-        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${maxPhotos} photos reached`;
+        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photos reached for this session`;
       }
     } else {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
@@ -3146,8 +3202,6 @@ async function startCamera(facing = 'environment') {
   cameraFacingMode = facing;
   stopCameraStream();
 
-  capturedBlob = null;
-  capturedPhotos = [];
   hideBlurBanner();
 
   // Reset UI states
@@ -3188,7 +3242,7 @@ async function startCamera(facing = 'environment') {
   }
 
   renderCameraStrip();
-  updateCameraCounters(0, false);
+  updateCameraCounters(capturedPhotos.length, false);
 
   openModal(els.cameraModal);
 
@@ -3285,9 +3339,14 @@ function capturePhoto() {
     return;
   }
 
-  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  if (capturedPhotos.length >= maxPhotos) {
-    showToast(`Maximum ${maxPhotos} photos reached for this session.`, 'error');
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
+
+  if (capturedPhotos.length >= sessionLimit) {
+    showToast(`Maximum ${sessionLimit} photos reached for this session.`, 'error');
     return;
   }
 
@@ -3305,8 +3364,15 @@ function capturePhoto() {
       showToast('Could not capture frame. Please try again.', 'error');
       return;
     }
-    capturedBlob = blob;
     const previewUrl = URL.createObjectURL(blob);
+    const photoObj = {
+      id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      blob: blob,
+      dataURL: previewUrl
+    };
+    capturedPhotos.push(photoObj);
+    capturedBlob = blob;
+    console.log('[Camera] Appended desktop capture, total in session:', capturedPhotos.length);
 
     if (els.cameraPreviewImg) {
       els.cameraPreviewImg.src = previewUrl;
@@ -3333,29 +3399,51 @@ function capturePhoto() {
     // Run blur detection check
     await checkAndApplyBlurNotice(previewUrl);
 
-    const totalCount = capturedPhotos.length + 1;
+    const totalCount = capturedPhotos.length;
     if (els.cameraConfirmLbl) {
       els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
     }
 
-    if (totalCount >= maxPhotos) {
+    if (totalCount >= sessionLimit) {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
       if (els.cameraLimitMsg) {
         els.cameraLimitMsg.classList.remove('hidden');
-        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${maxPhotos} photos reached`;
+        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photos reached for this session`;
       }
     } else {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
       if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
     }
 
+    renderCameraStrip();
     updateCameraCounters(totalCount, true);
   }, 'image/png', 0.95);
 }
 
 function retakePhoto() {
-  capturedBlob = null;
   hideBlurBanner();
+  if (capturedPhotos.length > 0) {
+    capturedPhotos.pop();
+    console.log('[Camera] Retook latest photo, remaining in session:', capturedPhotos.length);
+  }
+  capturedBlob = null;
+  renderCameraStrip();
+
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
+
+  const totalCount = capturedPhotos.length;
+  if (els.cameraConfirmLbl) {
+    els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
+  }
+
+  if (totalCount < sessionLimit) {
+    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
+    if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+  }
 
   if (isMobileDevice()) {
     if (els.cameraFileInput) {
@@ -3365,6 +3453,7 @@ function retakePhoto() {
     return;
   }
 
+  // Desktop Return to live camera feed
   if (els.cameraPreviewImg) {
     els.cameraPreviewImg.classList.add('hidden');
     els.cameraPreviewImg.src = '';
@@ -3394,24 +3483,19 @@ function retakePhoto() {
 function addAnotherPhoto() {
   hideBlurBanner();
 
-  if (capturedBlob) {
-    capturedPhotos.push({
-      id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      blob: capturedBlob,
-      dataURL: els.cameraPreviewImg ? els.cameraPreviewImg.src : ''
-    });
-    capturedBlob = null;
-  }
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
 
-  renderCameraStrip();
-
-  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  if (capturedPhotos.length >= maxPhotos) {
+  if (capturedPhotos.length >= sessionLimit) {
     if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
     if (els.cameraLimitMsg) {
       els.cameraLimitMsg.classList.remove('hidden');
-      if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${maxPhotos} photos reached`;
+      if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photos reached`;
     }
+    showToast(`You can capture up to ${sessionLimit} photos this session.`, 'info');
     return;
   }
 
@@ -3451,15 +3535,6 @@ function addAnotherPhoto() {
 }
 
 async function confirmPhoto() {
-  if (capturedBlob) {
-    capturedPhotos.push({
-      id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      blob: capturedBlob,
-      dataURL: els.cameraPreviewImg ? els.cameraPreviewImg.src : ''
-    });
-    capturedBlob = null;
-  }
-
   if (capturedPhotos.length === 0) return;
 
   const count = capturedPhotos.length;
@@ -3490,6 +3565,7 @@ async function confirmPhoto() {
     return f;
   });
 
+  console.log(`[Camera] Confirmed ${files.length} photo(s) for extraction:`, files.map(f => f.displayName));
   closeCameraModal();
   await handleFiles(files);
 }
@@ -3618,30 +3694,12 @@ function bindEvents() {
     els.openCameraBtn.addEventListener('click', e => {
       if (e.target === els.cameraFileInput) return;
       e.preventDefault();
-      if (isMobileDevice()) {
-        capturedPhotos = [];
-        capturedBlob = null;
-        if (els.cameraFileInput) {
-          els.cameraFileInput.value = '';
-          els.cameraFileInput.click();
-        }
-      } else {
-        startCamera('environment');
-      }
+      openCameraSession();
     });
     els.openCameraBtn.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        if (isMobileDevice()) {
-          capturedPhotos = [];
-          capturedBlob = null;
-          if (els.cameraFileInput) {
-            els.cameraFileInput.value = '';
-            els.cameraFileInput.click();
-          }
-        } else {
-          startCamera('environment');
-        }
+        openCameraSession();
       }
     });
   }
