@@ -2924,7 +2924,7 @@ function getRemainingExtractions() {
 function calculateCameraSessionLimit() {
   const remaining = getRemainingExtractions();
   const maxAllowed = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON; // 10 for signed-in, 5 for anonymous
-  const limit = Math.max(1, Math.min(remaining, maxAllowed));
+  const limit = Math.min(remaining, maxAllowed);
   return { remaining, maxAllowed, limit };
 }
 
@@ -3129,10 +3129,25 @@ function isMobileDevice() {
          (navigator.maxTouchPoints > 0 && window.innerWidth <= 768);
 }
 
-function openCameraSession() {
-  const remainingExtractions = getRemainingExtractions();
-  const maxLimit = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const calculatedLimit = Math.max(1, Math.min(remainingExtractions, maxLimit));
+async function openCameraSession() {
+  // Always fetch fresh status — never rely on potentially stale state
+  let statusData = null;
+  if (!state.authToken) {
+    statusData = await fetchAnonStatus();
+  } else {
+    await fetchUserUsage();
+  }
+
+  let remaining;
+  if (state.authToken) {
+    remaining = (state.authRemaining !== null && state.authRemaining !== undefined) ? Number(state.authRemaining) : 50;
+  } else {
+    // Use direct API response, never localStorage fallback
+    remaining = (statusData && statusData.remaining !== undefined) ? Number(statusData.remaining) : (state.anonRemaining !== null ? Number(state.anonRemaining) : 0);
+  }
+
+  const maxAllowed = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  state.cameraSessionLimit = Math.min(remaining, maxAllowed);
 
   // Log raw state and calculation values when camera opens
   console.log('[Camera] Raw state on camera open:', {
@@ -3140,12 +3155,12 @@ function openCameraSession() {
     anonRemaining: state.anonRemaining,
     authToken: !!state.authToken,
     authRemaining: state.authRemaining,
-    remainingExtractions
+    remaining
   });
-  console.log(`[Camera] Opening camera session — remainingExtractions: ${remainingExtractions}, ${state.authToken ? 'authLimit (10)' : 'anonLimit (5)'}: ${maxLimit}, calculated sessionLimit: ${calculatedLimit}`);
-  console.log(`Session limit: ${calculatedLimit}, Remaining extractions: ${remainingExtractions}`);
+  console.log(`[Camera] Opening camera session — remainingExtractions: ${remaining}, ${state.authToken ? 'authLimit (10)' : 'anonLimit (5)'}: ${maxAllowed}, calculated sessionLimit: ${state.cameraSessionLimit}`);
+  console.log(`Session limit: ${state.cameraSessionLimit}, Remaining extractions: ${remaining}`);
 
-  if (remainingExtractions <= 0) {
+  if (remaining <= 0) {
     if (!state.authToken) {
       openAuthModal({ fromLimit: true });
       showToast("You've used all 25 free extractions. Sign in for 50/day.", 'error');
@@ -3155,8 +3170,6 @@ function openCameraSession() {
     return;
   }
 
-  // Lock in fixed session limit at session start — never updated to captures.length
-  state.cameraSessionLimit = calculatedLimit;
   capturedPhotos = [];
   capturedBlob = null;
   hideBlurBanner();

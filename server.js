@@ -218,16 +218,18 @@ async function refreshTokenIfNeeded(force = false) {
       if (err.stack) console.error(err.stack);
     }
   }
-
-  // 2. Fallback to static GEMINI_API_KEY
-  const staticKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (staticKey && staticKey !== 'your_gemini_api_key_here') {
-    _cachedToken = staticKey;
-    _tokenLoadedAt = Date.now();
-    _isServiceAccountActive = false;
-    const prefix = staticKey.slice(0, 10);
-    console.warn(`[Auth] [${nowIso}] ⚠ Using static API key (${prefix}…). Service account is NOT active — this key will expire hourly if starting with AQ.!`);
-    return _cachedToken;
+ 
+  // 2. Fallback to static GEMINI_API_KEY only if NO service account credentials exist
+  if (!rawCred) {
+    const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+    if (staticKey && staticKey !== 'your_gemini_api_key_here') {
+      _cachedToken = staticKey;
+      _tokenLoadedAt = Date.now();
+      _isServiceAccountActive = false;
+      const prefix = staticKey.slice(0, 10);
+      console.warn(`[Auth] [${nowIso}] ⚠ Using static API key (${prefix}…). Service account is NOT active — this key will expire hourly if starting with AQ.!`);
+      return _cachedToken;
+    }
   }
 
   throw new Error('No valid Gemini credentials found. Please set GOOGLE_SERVICE_ACCOUNT_JSON or GEMINI_API_KEY.');
@@ -247,15 +249,16 @@ async function getGeminiToken() {
     throw err;
   }
 
-  const staticKey = (process.env.GEMINI_API_KEY || '').trim();
   let tokenToUse = _cachedToken;
-  let isBearer = _cachedToken.startsWith('ya29.');
+  let isBearer = _isServiceAccountActive || _cachedToken.startsWith('ya29.');
 
-  // Google Generative Language Developer API restricts service account OAuth tokens (ya29.)
-  // When an Authorization Key (AQ.) or API key (AIza) is available, use it directly via ?key= for 0ms overhead
-  if (isBearer && staticKey && staticKey !== 'your_gemini_api_key_here') {
-    tokenToUse = staticKey;
-    isBearer = false;
+  // If service account is NOT active, check if static key is configured
+  if (!_isServiceAccountActive) {
+    const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+    if (staticKey && staticKey !== 'your_gemini_api_key_here') {
+      tokenToUse = staticKey;
+      isBearer = staticKey.startsWith('ya29.');
+    }
   }
 
   const format = tokenToUse.startsWith('AQ.') ? 'AQ.'
@@ -1637,10 +1640,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
   let modelIndex = 0;
 
   for (const model of GEMINI_MODELS) {
-    // Add 500ms delay ONLY between the first and second model attempt (not before the first attempt)
+    // Add pause with exponential backoff before fallback attempts (2000ms for 1st fallback, 4000ms for 2nd)
     if (modelIndex > 0) {
-      console.log(`[CodeSnapper] ⏱ Pausing 500ms before fallback model "${model}" to recover from possible rate limits…`);
-      await new Promise(r => setTimeout(r, 500));
+      const pauseMs = 2000 * Math.pow(2, modelIndex - 1);
+      console.log(`[RateLimit] Quota exhausted on model "${GEMINI_MODELS[modelIndex - 1]}" — waiting ${pauseMs / 1000}s before fallback to "${model}"…`);
+      await new Promise(r => setTimeout(r, pauseMs));
     }
     modelIndex++;
 
@@ -1718,61 +1722,15 @@ app.post('/api/extract', authenticate, async (req, res) => {
         console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | HTTP ${gemRes.status} | [${err.type}] ${err.msg} | Response: ${JSON.stringify(data?.error || data)}`);
 
         if (err.type === 'RATE_LIMIT' || gemRes.status === 429) {
-          console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model…`);
+          console.warn(`[RateLimit] Quota exhausted on model ${model} — waiting before fallback`);
           rateLimitError = err;
           continue;
         }
 
         if (['AUTH_TOKEN_UNSUPPORTED', 'INVALID_KEY', 'ACCESS_DENIED'].includes(err.type) || gemRes.status === 401 || gemRes.status === 403) {
-          // If bearer token was rejected (e.g. Generative Language API restricting service accounts),
-          // check if a static GEMINI_API_KEY is available and fallback immediately!
-          const staticKey = (process.env.GEMINI_API_KEY || '').trim();
-          if (isBearer && staticKey && staticKey !== token) {
-            console.warn(`[Auth] ⚠ Service account bearer token rejected (HTTP ${gemRes.status}: ${err.msg}). Falling back to static GEMINI_API_KEY (${staticKey.slice(0, 10)}…)`);
-            token = staticKey;
-            isBearer = false;
-            _isServiceAccountActive = false;
-            // Retry this model immediately with the static key
-            const fallbackRes = await tryNativeEndpoint(model, token, false, nativeBody, Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - (Date.now() - imageStartTime)));
-            if (fallbackRes.res.ok) {
-              const text = fallbackRes.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-              if (text) {
-                const parsed = parseGeminiOutput(text);
-                const totalDurationMs = Date.now() - imageStartTime;
-                _lastSuccessfulApiCall = new Date().toISOString();
-                _totalSuccessfulCalls++;
-                console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms [fallback native/${model}] | Language: "${parsed.language}" | Code length: ${parsed.code.length} chars`);
-                let remaining = null;
-                let shouldPromptRating = false;
-                let totalExtractions = 0;
-                if (req.user) {
-                  const user = await getUser(req.user.email);
-                  if (user) {
-                    await refreshWindow(user);
-                    user.countInWindow = (user.countInWindow || 0) + 1;
-                    user.totalExtractions = (user.totalExtractions || 0) + 1;
-                    await saveUser(user);
-                    remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
-                    totalExtractions = user.totalExtractions;
-                    if (totalExtractions === 30 && !user.hasRated) {
-                      shouldPromptRating = true;
-                    }
-                  }
-                  return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
-                } else {
-                  const newAnon = await incAnonUsage(clientIp);
-                  remaining = newAnon.remaining;
-                  return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint: 'native-fallback', remaining, durationMs: totalDurationMs });
-                }
-              }
-            } else {
-              console.error(`[Auth] ✗ Static key fallback failed: HTTP ${fallbackRes.res.status} | Details: ${JSON.stringify(fallbackRes.data?.error || fallbackRes.data)}`);
-            }
-          }
-
           // If service account is configured, try emergency token refresh once
           if (!hardAuthError && (_isServiceAccountActive || findServiceAccountRaw())) {
-            console.log('[Auth] ⚠ Auth error encountered during extraction. Attempting emergency token refresh…');
+            console.log('[Auth] ⚠ Auth error encountered during extraction. Attempting emergency token refresh via service account…');
             try {
               const freshToken = await refreshTokenIfNeeded(true);
               if (freshToken && freshToken !== token) {

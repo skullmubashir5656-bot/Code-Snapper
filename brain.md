@@ -22,8 +22,9 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 ## API Credentials
 - **Priority 1**: `GOOGLE_SERVICE_ACCOUNT_JSON` → service account authenticated via `google-auth-library`
   - Auto-refreshes token every 45 minutes
-- **Priority 2**: `GEMINI_API_KEY` → static key passed via `?key=` query param
-- **Current working models**: `gemini-3.5-flash-lite` → `gemini-3.5-flash`
+  - Used exclusively across all model attempts when present (never mixes or falls back to static key)
+- **Priority 2**: `GEMINI_API_KEY` → static key passed via `?key=` query param (only if no service account exists)
+- **Current working models**: `gemini-3.5-flash-lite` → `gemini-3.5-flash` (with 2s/4s exponential backoff between fallbacks)
 - **Timeouts**:
   - Per-model timeout: `10000ms` (10 seconds)
   - Server total maximum timeout: `22000ms` (22 seconds)
