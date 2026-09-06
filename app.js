@@ -55,11 +55,13 @@ const state = {
   activeBatchIdx: 0,           // Currently viewed tab index in batch result
 
   // Auth & Usage
-  anonCount:     null,         // number or null (from /api/anon/status)
+  anonCount:     null,         // number or null (used count from /api/anon/status)
+  anonRemaining: null,         // number or null (remaining count from /api/anon/status)
   authToken:     null,         // JWT string or null
   authEmail:     null,         // signed-in email
   authRemaining: null,         // extractions remaining this window (number or null)
   authUsed:      null,         // extractions used this window (from server)
+  cameraSessionLimit: null,    // fixed capture cap for current active camera session
   pendingExtract:false,        // true when extraction was queued but auth modal was shown
 };
 
@@ -388,7 +390,8 @@ async function fetchAnonStatus() {
     const res = await fetch('/api/anon/status');
     if (res.ok) {
       const data = await res.json();
-      state.anonCount = data.count ?? 0;
+      state.anonCount = (data.count !== undefined) ? data.count : (data.used !== undefined ? data.used : 0);
+      state.anonRemaining = (data.remaining !== undefined) ? data.remaining : Math.max(0, MAX_ANON_EXTRACTIONS - state.anonCount);
       updateUsageUI();
       return data;
     }
@@ -2880,8 +2883,34 @@ async function checkVideoDevices() {
   }
 }
 
+function getRemainingExtractions() {
+  if (state.authToken) {
+    if (state.authRemaining !== null && state.authRemaining !== undefined) {
+      return Number(state.authRemaining);
+    }
+    if (state.authUsed !== null && state.authUsed !== undefined) {
+      return Math.max(0, 50 - Number(state.authUsed));
+    }
+    return 50;
+  }
+  if (state.anonRemaining !== null && state.anonRemaining !== undefined) {
+    return Number(state.anonRemaining);
+  }
+  if (state.anonCount !== null && state.anonCount !== undefined) {
+    return Math.max(0, MAX_ANON_EXTRACTIONS - Number(state.anonCount));
+  }
+  return Math.max(0, MAX_ANON_EXTRACTIONS - getCount());
+}
+
+function calculateCameraSessionLimit() {
+  const remaining = getRemainingExtractions();
+  const maxAllowed = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON; // 10 for signed-in, 5 for anonymous
+  const limit = Math.max(1, Math.min(remaining, maxAllowed));
+  return { remaining, maxAllowed, limit };
+}
+
 function updateCameraCounters(activeCount = 0, inReview = false) {
-  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const maxPhotos = state.cameraSessionLimit || (state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON);
   
   if (els.cameraCounterBadge) {
     if (activeCount === 0) {
@@ -2937,12 +2966,7 @@ function removeCapturedPhoto(id) {
   console.log('[Camera] Removed photo, remaining in session:', capturedPhotos.length);
   renderCameraStrip();
 
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
-  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
-
+  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
   const totalCount = capturedPhotos.length;
   if (els.cameraConfirmLbl) {
     els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
@@ -3087,11 +3111,15 @@ function isMobileDevice() {
 }
 
 function openCameraSession() {
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const remainingExtractions = getRemainingExtractions();
+  const maxLimit = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  const calculatedLimit = Math.max(1, Math.min(remainingExtractions, maxLimit));
 
-  if (remaining <= 0) {
+  // Log calculation values when camera opens
+  console.log(`[Camera] Opening camera session — remainingExtractions: ${remainingExtractions}, ${state.authToken ? 'authLimit (10)' : 'anonLimit (5)'}: ${maxLimit}, min: ${calculatedLimit}`);
+  console.log(`Session limit: ${calculatedLimit}, Remaining extractions: ${remainingExtractions}`);
+
+  if (remainingExtractions <= 0) {
     if (!state.authToken) {
       openAuthModal({ fromLimit: true });
       showToast("You've used all 25 free extractions. Sign in for 50/day.", 'error');
@@ -3101,15 +3129,11 @@ function openCameraSession() {
     return;
   }
 
-  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const sessionLimit = Math.min(remaining, maxBatch);
-
-  // Initialize fresh camera session array
+  // Lock in fixed session limit at session start — never updated to captures.length
+  state.cameraSessionLimit = calculatedLimit;
   capturedPhotos = [];
   capturedBlob = null;
   hideBlurBanner();
-
-  console.log(`[Camera] Starting session — remaining extractions: ${remaining}, session capture limit: ${sessionLimit}`);
 
   if (isMobileDevice()) {
     if (els.cameraFileInput) {
@@ -3124,14 +3148,10 @@ function openCameraSession() {
 async function handleNativeCameraCapture(file) {
   if (!file) return;
 
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
-  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
+  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
 
   if (capturedPhotos.length >= sessionLimit) {
-    showToast(`Maximum ${sessionLimit} photos reached for this session.`, 'error');
+    showToast(`Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session.`, 'error');
     return;
   }
 
@@ -3150,7 +3170,9 @@ async function handleNativeCameraCapture(file) {
     };
     capturedPhotos.push(photoObj);
     capturedBlob = file;
-    console.log('[Camera] Appended photo, total in session:', capturedPhotos.length);
+
+    const totalCount = capturedPhotos.length;
+    console.log(`Captures: ${totalCount}, Session limit: ${sessionLimit}`);
 
     // Show captured image in review mode in camera modal
     if (els.cameraPreviewImg) {
@@ -3173,7 +3195,6 @@ async function handleNativeCameraCapture(file) {
     // Blur detection check
     await checkAndApplyBlurNotice(dataURL);
 
-    const totalCount = capturedPhotos.length;
     if (els.cameraConfirmLbl) {
       els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
     }
@@ -3182,7 +3203,7 @@ async function handleNativeCameraCapture(file) {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
       if (els.cameraLimitMsg) {
         els.cameraLimitMsg.classList.remove('hidden');
-        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photos reached for this session`;
+        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session`;
       }
     } else {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
@@ -3201,6 +3222,10 @@ async function handleNativeCameraCapture(file) {
 async function startCamera(facing = 'environment') {
   cameraFacingMode = facing;
   stopCameraStream();
+
+  if (!state.cameraSessionLimit || state.cameraSessionLimit < 1) {
+    state.cameraSessionLimit = calculateCameraSessionLimit().limit;
+  }
 
   hideBlurBanner();
 
@@ -3321,6 +3346,7 @@ function closeCameraModal() {
   stopCameraStream();
   capturedBlob = null;
   capturedPhotos = [];
+  state.cameraSessionLimit = null;
   hideBlurBanner();
   renderCameraStrip();
   updateCameraCounters(0, false);
@@ -3339,14 +3365,10 @@ function capturePhoto() {
     return;
   }
 
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
-  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
+  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
 
   if (capturedPhotos.length >= sessionLimit) {
-    showToast(`Maximum ${sessionLimit} photos reached for this session.`, 'error');
+    showToast(`Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session.`, 'error');
     return;
   }
 
@@ -3372,7 +3394,9 @@ function capturePhoto() {
     };
     capturedPhotos.push(photoObj);
     capturedBlob = blob;
-    console.log('[Camera] Appended desktop capture, total in session:', capturedPhotos.length);
+
+    const totalCount = capturedPhotos.length;
+    console.log(`Captures: ${totalCount}, Session limit: ${sessionLimit}`);
 
     if (els.cameraPreviewImg) {
       els.cameraPreviewImg.src = previewUrl;
@@ -3399,7 +3423,6 @@ function capturePhoto() {
     // Run blur detection check
     await checkAndApplyBlurNotice(previewUrl);
 
-    const totalCount = capturedPhotos.length;
     if (els.cameraConfirmLbl) {
       els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
     }
@@ -3408,7 +3431,7 @@ function capturePhoto() {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
       if (els.cameraLimitMsg) {
         els.cameraLimitMsg.classList.remove('hidden');
-        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photos reached for this session`;
+        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached for this session`;
       }
     } else {
       if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
@@ -3429,13 +3452,10 @@ function retakePhoto() {
   capturedBlob = null;
   renderCameraStrip();
 
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
-  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
-
+  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
   const totalCount = capturedPhotos.length;
+  console.log(`[Camera] After retake — Captures: ${totalCount}, Session limit: ${sessionLimit}`);
+
   if (els.cameraConfirmLbl) {
     els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
   }
@@ -3483,17 +3503,13 @@ function retakePhoto() {
 function addAnotherPhoto() {
   hideBlurBanner();
 
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
-  const maxBatch = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
-  const sessionLimit = Math.max(1, Math.min(remaining, maxBatch));
+  const sessionLimit = state.cameraSessionLimit || calculateCameraSessionLimit().limit;
 
   if (capturedPhotos.length >= sessionLimit) {
     if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
     if (els.cameraLimitMsg) {
       els.cameraLimitMsg.classList.remove('hidden');
-      if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photos reached`;
+      if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${sessionLimit} photo${sessionLimit > 1 ? 's' : ''} reached`;
     }
     showToast(`You can capture up to ${sessionLimit} photos this session.`, 'info');
     return;
@@ -3538,9 +3554,7 @@ async function confirmPhoto() {
   if (capturedPhotos.length === 0) return;
 
   const count = capturedPhotos.length;
-  const remaining = state.authToken
-    ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+  const remaining = getRemainingExtractions();
 
   if (count > remaining) {
     if (!state.authToken) {
