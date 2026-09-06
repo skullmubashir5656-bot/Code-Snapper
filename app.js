@@ -390,8 +390,27 @@ async function fetchAnonStatus() {
     const res = await fetch('/api/anon/status');
     if (res.ok) {
       const data = await res.json();
-      state.anonCount = (data.count !== undefined) ? data.count : (data.used !== undefined ? data.used : 0);
-      state.anonRemaining = (data.remaining !== undefined) ? data.remaining : Math.max(0, MAX_ANON_EXTRACTIONS - state.anonCount);
+      console.log('[AnonStatus] /api/anon/status raw response:', data);
+      
+      // Calculate remaining extractions from API response:
+      // If response is { count: 16, remaining: 9, limit: 25 } -> use data.remaining
+      // If response is { used: 16, limit: 25 } -> calculate as data.limit - data.used
+      // If response is { extractions: 16 } -> calculate as 25 - data.extractions
+      let remaining = 25;
+      if (data.remaining !== undefined) {
+        remaining = Number(data.remaining);
+      } else if (data.used !== undefined && data.limit !== undefined) {
+        remaining = Number(data.limit) - Number(data.used);
+      } else if (data.count !== undefined && data.limit !== undefined) {
+        remaining = Number(data.limit) - Number(data.count);
+      } else if (data.extractions !== undefined) {
+        remaining = 25 - Number(data.extractions);
+      } else if (data.count !== undefined) {
+        remaining = Math.max(0, 25 - Number(data.count));
+      }
+
+      state.anonRemaining = remaining;
+      state.anonCount = (data.count !== undefined) ? Number(data.count) : (data.used !== undefined ? Number(data.used) : (25 - remaining));
       updateUsageUI();
       return data;
     }
@@ -3115,8 +3134,15 @@ function openCameraSession() {
   const maxLimit = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
   const calculatedLimit = Math.max(1, Math.min(remainingExtractions, maxLimit));
 
-  // Log calculation values when camera opens
-  console.log(`[Camera] Opening camera session — remainingExtractions: ${remainingExtractions}, ${state.authToken ? 'authLimit (10)' : 'anonLimit (5)'}: ${maxLimit}, min: ${calculatedLimit}`);
+  // Log raw state and calculation values when camera opens
+  console.log('[Camera] Raw state on camera open:', {
+    anonCount: state.anonCount,
+    anonRemaining: state.anonRemaining,
+    authToken: !!state.authToken,
+    authRemaining: state.authRemaining,
+    remainingExtractions
+  });
+  console.log(`[Camera] Opening camera session — remainingExtractions: ${remainingExtractions}, ${state.authToken ? 'authLimit (10)' : 'anonLimit (5)'}: ${maxLimit}, calculated sessionLimit: ${calculatedLimit}`);
   console.log(`Session limit: ${calculatedLimit}, Remaining extractions: ${remainingExtractions}`);
 
   if (remainingExtractions <= 0) {
