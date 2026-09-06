@@ -236,19 +236,29 @@ const els = {
   cameraModal:          $('camera-modal'),
   cameraModalClose:     $('camera-modal-close'),
   cameraSwitchBtn:      $('camera-switch-btn'),
+  cameraBadge:          $('camera-badge'),
+  cameraCounterBadge:   $('camera-counter-badge'),
   cameraVideo:          $('camera-video'),
   cameraCanvas:         $('camera-canvas'),
   cameraPreviewImg:     $('camera-preview-img'),
   cameraFramingGuide:   $('camera-framing-guide'),
+  cameraStripWrap:      $('camera-strip-wrap'),
+  cameraStripScroll:    $('camera-strip-scroll'),
+  cameraLimitMsg:       $('camera-limit-msg'),
+  cameraLimitText:      $('camera-limit-text'),
   cameraErrorView:      $('camera-error-view'),
   cameraErrorMsg:       $('camera-error-msg'),
   cameraRetryBtn:       $('camera-retry-btn'),
   cameraFallbackFileBtn:$('camera-fallback-file-btn'),
   cameraLiveControls:   $('camera-live-controls'),
   cameraCaptureBtn:     $('camera-capture-btn'),
+  cameraLiveDoneBtn:    $('camera-live-done-btn'),
+  cameraLiveDoneCount:  $('camera-live-done-count'),
   cameraReviewControls: $('camera-review-controls'),
   cameraRetakeBtn:      $('camera-retake-btn'),
+  cameraAddAnotherBtn:  $('camera-add-another-btn'),
   cameraConfirmBtn:     $('camera-confirm-btn'),
+  cameraConfirmLbl:     $('camera-confirm-lbl'),
   cameraTipsRow:        $('camera-tips-row'),
   cameraLiveDot:        $('camera-live-dot'),
 
@@ -741,10 +751,10 @@ function openAuthModal(opts = {}) {
 
   if (opts.fromLimit) {
     els.authModalDesc.innerHTML =
-      'You’ve used all 25 free extractions. Sign in to unlock <strong>50 extractions per day · Personal code history · Secure & private</strong>';
+      'You’ve used all 25 free extractions. Sign in to unlock <strong>50 extractions/day · 10 camera captures · Code history · Secure & private</strong>';
   } else {
     els.authModalDesc.innerHTML =
-      '<strong>50 extractions per day · Personal code history · Secure & private</strong>';
+      '<strong>50 extractions/day · 10 camera captures · Code history · Secure & private</strong>';
   }
 
   openModal(els.authModal);
@@ -2848,11 +2858,12 @@ async function copyCode() {
 }
 
 /* ═══════════════════════════════════════════════
-   CAMERA / LENS VIEWFINDER
+   CAMERA / LENS VIEWFINDER (Multi-Capture Support)
 ═══════════════════════════════════════════════ */
 let cameraStream = null;
 let cameraFacingMode = 'environment';
 let capturedBlob = null;
+let capturedPhotos = []; // Array of { id, blob, dataURL }
 let hasMultipleVideoDevices = false;
 
 async function checkVideoDevices() {
@@ -2869,9 +2880,91 @@ async function checkVideoDevices() {
   }
 }
 
+function updateCameraCounters(activeCount = 0, inReview = false) {
+  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  
+  if (els.cameraCounterBadge) {
+    if (activeCount === 0) {
+      els.cameraCounterBadge.classList.add('hidden');
+      if (els.cameraBadge) els.cameraBadge.classList.remove('hidden');
+    } else {
+      els.cameraCounterBadge.classList.remove('hidden');
+      els.cameraCounterBadge.textContent = inReview
+        ? `Photo ${activeCount} of ${maxPhotos}`
+        : `${activeCount} / ${maxPhotos} captured`;
+      if (els.cameraBadge) els.cameraBadge.classList.add('hidden');
+    }
+  }
+
+  if (els.cameraLiveDoneBtn) {
+    if (activeCount > 0 && !inReview) {
+      els.cameraLiveDoneBtn.classList.remove('hidden');
+      if (els.cameraLiveDoneCount) {
+        els.cameraLiveDoneCount.textContent = String(activeCount);
+      }
+    } else {
+      els.cameraLiveDoneBtn.classList.add('hidden');
+    }
+  }
+}
+
+function renderCameraStrip() {
+  if (!els.cameraStripWrap || !els.cameraStripScroll) return;
+
+  if (capturedPhotos.length === 0) {
+    els.cameraStripWrap.classList.add('hidden');
+    els.cameraStripScroll.innerHTML = '';
+    return;
+  }
+
+  els.cameraStripWrap.classList.remove('hidden');
+  els.cameraStripScroll.innerHTML = capturedPhotos.map((p, idx) => `
+    <div class="camera-strip-thumb" title="Captured photo ${idx + 1}" data-id="${p.id}">
+      <img src="${p.dataURL}" alt="Captured Photo ${idx + 1}" class="camera-thumb-img">
+      <span class="camera-thumb-num">${idx + 1}</span>
+      <button type="button" class="camera-thumb-del" onclick="removeCapturedPhoto('${p.id}'); event.stopPropagation();" aria-label="Remove photo ${idx + 1}" title="Remove photo">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  `).join('');
+
+  // Auto-scroll to latest photo
+  els.cameraStripScroll.scrollLeft = els.cameraStripScroll.scrollWidth;
+}
+
+function removeCapturedPhoto(id) {
+  capturedPhotos = capturedPhotos.filter(p => p.id !== id);
+  renderCameraStrip();
+
+  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+
+  if (capturedBlob !== null) {
+    // In review mode
+    const totalCount = capturedPhotos.length + 1;
+    if (els.cameraConfirmLbl) {
+      els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
+    }
+    if (totalCount < maxPhotos) {
+      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
+      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+    }
+    updateCameraCounters(totalCount, true);
+  } else {
+    // In live viewfinder mode
+    updateCameraCounters(capturedPhotos.length, false);
+    if (capturedPhotos.length < maxPhotos) {
+      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+    }
+  }
+}
+window.removeCapturedPhoto = removeCapturedPhoto;
+
 async function startCamera(facing = 'environment') {
   cameraFacingMode = facing;
   stopCameraStream();
+
+  capturedBlob = null;
+  capturedPhotos = [];
 
   // Reset UI states
   if (els.cameraVideo) {
@@ -2906,6 +2999,12 @@ async function startCamera(facing = 'environment') {
   if (els.cameraLiveDot) {
     els.cameraLiveDot.style.display = 'block';
   }
+  if (els.cameraLimitMsg) {
+    els.cameraLimitMsg.classList.add('hidden');
+  }
+
+  renderCameraStrip();
+  updateCameraCounters(0, false);
 
   openModal(els.cameraModal);
 
@@ -2964,6 +3063,8 @@ function showCameraError(msg) {
   if (els.cameraLiveControls) els.cameraLiveControls.style.display = 'none';
   if (els.cameraReviewControls) els.cameraReviewControls.style.display = 'none';
   if (els.cameraLiveDot) els.cameraLiveDot.style.display = 'none';
+  if (els.cameraStripWrap) els.cameraStripWrap.classList.add('hidden');
+  if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
 }
 
 function stopCameraStream() {
@@ -2981,6 +3082,10 @@ function stopCameraStream() {
 function closeCameraModal() {
   stopCameraStream();
   capturedBlob = null;
+  capturedPhotos = [];
+  renderCameraStrip();
+  updateCameraCounters(0, false);
+  if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
   closeModal(els.cameraModal);
 }
 
@@ -2992,6 +3097,12 @@ function switchCamera() {
 function capturePhoto() {
   if (!els.cameraVideo || !els.cameraVideo.videoWidth) {
     showToast('Waiting for camera stream…', 'error');
+    return;
+  }
+
+  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  if (capturedPhotos.length >= maxPhotos) {
+    showToast(`Maximum ${maxPhotos} photos reached for this session.`, 'error');
     return;
   }
 
@@ -3032,6 +3143,24 @@ function capturePhoto() {
     if (els.cameraLiveDot) {
       els.cameraLiveDot.style.display = 'none';
     }
+
+    const totalCount = capturedPhotos.length + 1;
+    if (els.cameraConfirmLbl) {
+      els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
+    }
+
+    if (totalCount >= maxPhotos) {
+      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
+      if (els.cameraLimitMsg) {
+        els.cameraLimitMsg.classList.remove('hidden');
+        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${maxPhotos} photos reached`;
+      }
+    } else {
+      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
+      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+    }
+
+    updateCameraCounters(totalCount, true);
   }, 'image/png', 0.95);
 }
 
@@ -3056,13 +3185,100 @@ function retakePhoto() {
   if (els.cameraLiveDot) {
     els.cameraLiveDot.style.display = 'block';
   }
+  if (els.cameraLimitMsg) {
+    els.cameraLimitMsg.classList.add('hidden');
+  }
+
+  updateCameraCounters(capturedPhotos.length, false);
+}
+
+function addAnotherPhoto() {
+  if (capturedBlob) {
+    capturedPhotos.push({
+      id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      blob: capturedBlob,
+      dataURL: els.cameraPreviewImg ? els.cameraPreviewImg.src : ''
+    });
+    capturedBlob = null;
+  }
+
+  renderCameraStrip();
+
+  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  if (capturedPhotos.length >= maxPhotos) {
+    if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
+    if (els.cameraLimitMsg) {
+      els.cameraLimitMsg.classList.remove('hidden');
+      if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${maxPhotos} photos reached`;
+    }
+    return;
+  }
+
+  // Return to live camera feed
+  if (els.cameraPreviewImg) {
+    els.cameraPreviewImg.classList.add('hidden');
+    els.cameraPreviewImg.src = '';
+  }
+  if (els.cameraVideo) {
+    els.cameraVideo.style.display = 'block';
+  }
+  if (els.cameraFramingGuide) {
+    els.cameraFramingGuide.style.display = 'flex';
+  }
+  if (els.cameraLiveControls) {
+    els.cameraLiveControls.style.display = 'flex';
+  }
+  if (els.cameraReviewControls) {
+    els.cameraReviewControls.style.display = 'none';
+  }
+  if (els.cameraLiveDot) {
+    els.cameraLiveDot.style.display = 'block';
+  }
+  if (els.cameraLimitMsg) {
+    els.cameraLimitMsg.classList.add('hidden');
+  }
+
+  updateCameraCounters(capturedPhotos.length, false);
 }
 
 async function confirmPhoto() {
-  if (!capturedBlob) return;
-  const file = new File([capturedBlob], `camera_snap_${Date.now()}.png`, { type: 'image/png' });
+  if (capturedBlob) {
+    capturedPhotos.push({
+      id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      blob: capturedBlob,
+      dataURL: els.cameraPreviewImg ? els.cameraPreviewImg.src : ''
+    });
+    capturedBlob = null;
+  }
+
+  if (capturedPhotos.length === 0) return;
+
+  const count = capturedPhotos.length;
+  const remaining = state.authToken
+    ? (state.authRemaining !== null ? state.authRemaining : 50)
+    : Math.max(0, MAX_ANON_EXTRACTIONS - (state.anonCount !== null ? state.anonCount : getCount()));
+
+  if (count > remaining) {
+    if (!state.authToken) {
+      closeCameraModal();
+      openAuthModal({ fromLimit: true });
+      showToast(`You have ${remaining} extraction${remaining === 1 ? '' : 's'} remaining. Sign in for 50/day.`, 'error');
+      return;
+    } else {
+      showToast(`You have ${remaining} extraction${remaining === 1 ? '' : 's'} remaining today, but selected ${count} photos.`, 'error');
+      if (remaining === 0) {
+        closeCameraModal();
+        return;
+      }
+    }
+  }
+
+  const files = capturedPhotos.map((p, idx) =>
+    new File([p.blob], `camera_snap_${Date.now()}_${idx + 1}.png`, { type: 'image/png' })
+  );
+
   closeCameraModal();
-  await handleFiles([file]);
+  await handleFiles(files);
 }
 
 /* ═══════════════════════════════════════════════
@@ -3193,21 +3409,13 @@ function bindEvents() {
   if (els.openCameraBtn) {
     els.openCameraBtn.addEventListener('click', e => {
       if (e.target === els.cameraFileInput) return;
-      if (!isMobilePlatform()) {
-        // On desktop browsers with webcam, open the live camera viewfinder modal
-        e.preventDefault();
-        startCamera('environment');
-      }
-      // On mobile devices, native <label for="camera-file-input"> triggers the capture="environment" input directly
+      e.preventDefault();
+      startCamera('environment');
     });
     els.openCameraBtn.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        if (isMobilePlatform() && els.cameraFileInput) {
-          els.cameraFileInput.click();
-        } else {
-          startCamera('environment');
-        }
+        startCamera('environment');
       }
     });
   }
@@ -3228,8 +3436,14 @@ function bindEvents() {
   if (els.cameraRetakeBtn) {
     els.cameraRetakeBtn.addEventListener('click', retakePhoto);
   }
+  if (els.cameraAddAnotherBtn) {
+    els.cameraAddAnotherBtn.addEventListener('click', addAnotherPhoto);
+  }
   if (els.cameraConfirmBtn) {
     els.cameraConfirmBtn.addEventListener('click', confirmPhoto);
+  }
+  if (els.cameraLiveDoneBtn) {
+    els.cameraLiveDoneBtn.addEventListener('click', confirmPhoto);
   }
   if (els.cameraRetryBtn) {
     els.cameraRetryBtn.addEventListener('click', () => startCamera(cameraFacingMode));

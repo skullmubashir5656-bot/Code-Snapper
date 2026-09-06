@@ -63,7 +63,7 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 
 ## Features Checklist
 - **Upload**: File picker + drag-and-drop + `Ctrl+V` paste + mobile camera capture.
-- **Camera**: `capture="environment"` for mobile rear camera, separate file input from standard upload.
+- **Camera**: Multi-capture live viewfinder + mobile rear camera support, up to 5 photos (anonymous) or 10 photos (signed-in) per session with thumbnail preview strip and batch extraction integration.
 - **Batch Processing**: Up to 5 images (anonymous) or 10 images (signed-in), auto-crop only, sequential processing with pacing.
 - **Manual Crop**: Simple drag-to-select viewfinder, no pan/zoom clutter.
 - **Auto Crop**: Fully automatic canvas-based border detection, 0 user interaction required.

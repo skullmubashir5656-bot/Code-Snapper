@@ -44,7 +44,7 @@ No more manually retyping code from tutorials, textbooks, whiteboards, or someon
 - 📸 **Upload** — file picker, single or multiple images
 - 📋 **Paste** — Ctrl+V / Cmd+V directly from clipboard
 - 🖱️ **Drag & drop** — drop images anywhere on the upload zone
-- 📷 **Camera capture** — point your phone at a whiteboard, projector screen, or printed page and capture code live (rear camera on mobile, webcam on desktop)
+- 📷 **Use Camera Lens** — point your phone's rear camera at any code. Capture up to 5 photos per session (10 when signed in) — ideal for long code across multiple slides, whiteboard panels, or printed pages. All captures process as a single batch.
 
 ### ✂️ Crop modes
 - **Auto Crop** — AI detects the code block boundary automatically and extracts with zero clicks
