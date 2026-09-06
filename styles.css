@@ -1999,13 +1999,77 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   text-align: center;
 }
 
+/* Blur Detection Warning/Error Banner */
+.camera-blur-banner {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--r-lg);
+  background: rgba(239, 68, 68, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  animation: slideDown 0.22s ease both;
+}
+.camera-blur-banner.warning {
+  background: rgba(217, 119, 6, 0.95);
+  border-color: rgba(251, 191, 36, 0.4);
+}
+.camera-blur-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.camera-blur-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.camera-blur-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.35;
+}
+.camera-blur-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.camera-blur-actions .btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  min-height: 28px;
+  border-radius: var(--r-md);
+  font-weight: 600;
+}
+
 /* Controls */
 .camera-controls-bar {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 4px 0;
+  padding: 6px 0;
+  margin: 0 auto;
+  box-sizing: border-box;
+  text-align: center;
 }
 .camera-shutter-wrap {
   position: relative;
@@ -2013,10 +2077,12 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   justify-content: center;
   align-items: center;
   width: 100%;
+  margin: 0 auto;
 }
 .camera-live-done-btn {
   position: absolute;
-  right: 4px;
+  right: 0;
+  z-index: 3;
   font-weight: 700;
   padding: 8px 14px;
 }
@@ -2033,6 +2099,9 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   align-items: center;
   justify-content: center;
   box-shadow: 0 0 20px rgba(124, 58, 237, 0.4);
+  margin: 0 auto !important;
+  position: relative;
+  z-index: 2;
 }
 .camera-shutter-btn:hover {
   transform: scale(1.06);
@@ -2749,10 +2818,16 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     background: #000000 !important;
     z-index: 1 !important;
   }
-  #camera-video, #camera-canvas, #camera-preview-img {
+  #camera-video, #camera-canvas {
     width: 100% !important;
     height: 100% !important;
     object-fit: cover !important;
+  }
+  #camera-preview-img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    background: #000000 !important;
   }
   .camera-framing-guide {
     inset: 70px 20px 170px !important;

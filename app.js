@@ -258,7 +258,10 @@ const els = {
   cameraRetakeBtn:      $('camera-retake-btn'),
   cameraAddAnotherBtn:  $('camera-add-another-btn'),
   cameraConfirmBtn:     $('camera-confirm-btn'),
-  cameraConfirmLbl:     $('camera-confirm-lbl'),
+  cameraBlurBanner:     $('camera-blur-banner'),
+  cameraBlurText:       $('camera-blur-text'),
+  cameraBlurRetakeBtn:  $('camera-blur-retake-btn'),
+  cameraBlurAnywayBtn:  $('camera-blur-anyway-btn'),
   cameraTipsRow:        $('camera-tips-row'),
   cameraLiveDot:        $('camera-live-dot'),
 
@@ -2954,12 +2957,198 @@ function removeCapturedPhoto(id) {
 }
 window.removeCapturedPhoto = removeCapturedPhoto;
 
+/* ═══════════════════════════════════════════════
+   BLUR DETECTION (Laplacian Variance on Canvas)
+═══════════════════════════════════════════════ */
+async function detectImageBlur(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxDim = 400; // Fast standardized sample resolution
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if (w > maxDim || h > maxDim) {
+          const scale = maxDim / Math.max(w, h);
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0, w, h);
+        const imgData = ctx.getImageData(0, 0, w, h);
+        const d = imgData.data;
+
+        // Grayscale conversion
+        const gray = new Float32Array(w * h);
+        for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+          gray[j] = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        }
+
+        // 3x3 Laplacian edge filter kernel: [0, 1, 0, 1, -4, 1, 0, 1, 0]
+        let sum = 0;
+        let sumSq = 0;
+        let count = 0;
+
+        for (let y = 1; y < h - 1; y++) {
+          const yOffset = y * w;
+          for (let x = 1; x < w - 1; x++) {
+            const idx = yOffset + x;
+            const lap = gray[idx - w] + gray[idx - 1] + gray[idx + 1] + gray[idx + w] - 4 * gray[idx];
+            sum += lap;
+            sumSq += lap * lap;
+            count++;
+          }
+        }
+
+        if (count === 0) return resolve({ variance: 100, isBlurry: false, isBorderline: false, isSharp: true });
+        const mean = sum / count;
+        const variance = (sumSq / count) - (mean * mean);
+
+        // Thresholds: < 50 = Blurry, 50..100 = Borderline, > 100 = Sharp
+        const roundedVar = Math.round(variance);
+        resolve({
+          variance: roundedVar,
+          isBlurry: roundedVar < 50,
+          isBorderline: roundedVar >= 50 && roundedVar <= 100,
+          isSharp: roundedVar > 100
+        });
+      } catch (e) {
+        console.warn('[BlurDetection] Fallback on error:', e);
+        resolve({ variance: 100, isBlurry: false, isBorderline: false, isSharp: true });
+      }
+    };
+    img.onerror = () => resolve({ variance: 100, isBlurry: false, isBorderline: false, isSharp: true });
+    img.src = typeof src === 'string' ? src : URL.createObjectURL(src);
+  });
+}
+
+function showBlurBanner({ type, text, allowAnyway }) {
+  if (!els.cameraBlurBanner) return;
+  els.cameraBlurBanner.classList.remove('hidden', 'warning');
+  if (type === 'warning') {
+    els.cameraBlurBanner.classList.add('warning');
+  }
+  if (els.cameraBlurText) els.cameraBlurText.textContent = text;
+  if (els.cameraBlurAnywayBtn) {
+    if (allowAnyway) {
+      els.cameraBlurAnywayBtn.classList.remove('hidden');
+    } else {
+      els.cameraBlurAnywayBtn.classList.add('hidden');
+    }
+  }
+}
+
+function hideBlurBanner() {
+  if (els.cameraBlurBanner) {
+    els.cameraBlurBanner.classList.add('hidden');
+  }
+}
+
+async function checkAndApplyBlurNotice(dataURL) {
+  hideBlurBanner();
+  try {
+    const blurResult = await detectImageBlur(dataURL);
+    console.log(`[BlurDetection] Laplacian variance: ${blurResult.variance} (isBlurry: ${blurResult.isBlurry}, isBorderline: ${blurResult.isBorderline})`);
+
+    if (blurResult.isBlurry) {
+      showBlurBanner({
+        type: 'error',
+        text: 'This photo looks blurry — please retake for better accuracy',
+        allowAnyway: false
+      });
+    } else if (blurResult.isBorderline) {
+      showBlurBanner({
+        type: 'warning',
+        text: 'This photo may be blurry — results might be less accurate',
+        allowAnyway: true
+      });
+    }
+  } catch (e) {
+    console.warn('[BlurDetection] Evaluation skipped:', e);
+  }
+}
+
+function isMobileDevice() {
+  return window.matchMedia('(max-width: 768px)').matches ||
+         /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+         ('ontouchstart' in window && window.innerWidth <= 1024) ||
+         (navigator.maxTouchPoints > 0 && window.innerWidth <= 768);
+}
+
+async function handleNativeCameraCapture(file) {
+  if (!file) return;
+  const maxPhotos = state.authToken ? MAX_BATCH_AUTH : MAX_BATCH_ANON;
+  if (capturedPhotos.length >= maxPhotos) {
+    showToast(`Maximum ${maxPhotos} photos reached for this session.`, 'error');
+    return;
+  }
+
+  try {
+    const dataURL = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    capturedBlob = file;
+
+    // Show captured image in review mode in camera modal
+    if (els.cameraPreviewImg) {
+      els.cameraPreviewImg.src = dataURL;
+      els.cameraPreviewImg.classList.remove('hidden');
+      els.cameraPreviewImg.style.display = 'block';
+    }
+    if (els.cameraVideo) {
+      els.cameraVideo.classList.add('hidden');
+      els.cameraVideo.style.display = 'none';
+    }
+    if (els.cameraFramingGuide) els.cameraFramingGuide.style.display = 'none';
+    if (els.cameraLiveControls) els.cameraLiveControls.style.display = 'none';
+    if (els.cameraReviewControls) {
+      els.cameraReviewControls.classList.remove('hidden');
+      els.cameraReviewControls.style.display = 'flex';
+    }
+    if (els.cameraLiveDot) els.cameraLiveDot.style.display = 'none';
+
+    // Blur detection check
+    await checkAndApplyBlurNotice(dataURL);
+
+    const totalCount = capturedPhotos.length + 1;
+    if (els.cameraConfirmLbl) {
+      els.cameraConfirmLbl.textContent = totalCount === 1 ? 'Done (1 photo)' : `Done (${totalCount} photos)`;
+    }
+
+    if (totalCount >= maxPhotos) {
+      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.add('hidden');
+      if (els.cameraLimitMsg) {
+        els.cameraLimitMsg.classList.remove('hidden');
+        if (els.cameraLimitText) els.cameraLimitText.textContent = `Maximum ${maxPhotos} photos reached`;
+      }
+    } else {
+      if (els.cameraAddAnotherBtn) els.cameraAddAnotherBtn.classList.remove('hidden');
+      if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
+    }
+
+    renderCameraStrip();
+    updateCameraCounters(totalCount, true);
+    openModal(els.cameraModal);
+  } catch (err) {
+    console.error('[NativeCamera] Error processing captured file:', err);
+    showToast('Failed to load captured photo. Please try again.', 'error');
+  }
+}
+
 async function startCamera(facing = 'environment') {
   cameraFacingMode = facing;
   stopCameraStream();
 
   capturedBlob = null;
   capturedPhotos = [];
+  hideBlurBanner();
 
   // Reset UI states
   if (els.cameraVideo) {
@@ -3078,6 +3267,7 @@ function closeCameraModal() {
   stopCameraStream();
   capturedBlob = null;
   capturedPhotos = [];
+  hideBlurBanner();
   renderCameraStrip();
   updateCameraCounters(0, false);
   if (els.cameraLimitMsg) els.cameraLimitMsg.classList.add('hidden');
@@ -3110,7 +3300,7 @@ function capturePhoto() {
   const ctx = canvas.getContext('2d');
   ctx.drawImage(els.cameraVideo, 0, 0, vWidth, vHeight);
 
-  canvas.toBlob(blob => {
+  canvas.toBlob(async blob => {
     if (!blob) {
       showToast('Could not capture frame. Please try again.', 'error');
       return;
@@ -3121,6 +3311,7 @@ function capturePhoto() {
     if (els.cameraPreviewImg) {
       els.cameraPreviewImg.src = previewUrl;
       els.cameraPreviewImg.classList.remove('hidden');
+      els.cameraPreviewImg.style.display = 'block';
     }
     if (els.cameraVideo) {
       els.cameraVideo.style.display = 'none';
@@ -3138,6 +3329,9 @@ function capturePhoto() {
     if (els.cameraLiveDot) {
       els.cameraLiveDot.style.display = 'none';
     }
+
+    // Run blur detection check
+    await checkAndApplyBlurNotice(previewUrl);
 
     const totalCount = capturedPhotos.length + 1;
     if (els.cameraConfirmLbl) {
@@ -3161,6 +3355,16 @@ function capturePhoto() {
 
 function retakePhoto() {
   capturedBlob = null;
+  hideBlurBanner();
+
+  if (isMobileDevice()) {
+    if (els.cameraFileInput) {
+      els.cameraFileInput.value = '';
+      els.cameraFileInput.click();
+    }
+    return;
+  }
+
   if (els.cameraPreviewImg) {
     els.cameraPreviewImg.classList.add('hidden');
     els.cameraPreviewImg.src = '';
@@ -3188,6 +3392,8 @@ function retakePhoto() {
 }
 
 function addAnotherPhoto() {
+  hideBlurBanner();
+
   if (capturedBlob) {
     capturedPhotos.push({
       id: 'cam_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -3209,7 +3415,15 @@ function addAnotherPhoto() {
     return;
   }
 
-  // Return to live camera feed
+  if (isMobileDevice()) {
+    if (els.cameraFileInput) {
+      els.cameraFileInput.value = '';
+      els.cameraFileInput.click();
+    }
+    return;
+  }
+
+  // Desktop Return to live camera feed
   if (els.cameraPreviewImg) {
     els.cameraPreviewImg.classList.add('hidden');
     els.cameraPreviewImg.src = '';
@@ -3400,21 +3614,34 @@ function bindEvents() {
   });
 
   /* ── Camera Lens Actions ── */
-  function isMobilePlatform() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-      (window.matchMedia && window.matchMedia('(max-width: 768px)').matches && ('ontouchstart' in window || navigator.maxTouchPoints > 0));
-  }
-
   if (els.openCameraBtn) {
     els.openCameraBtn.addEventListener('click', e => {
       if (e.target === els.cameraFileInput) return;
       e.preventDefault();
-      startCamera('environment');
+      if (isMobileDevice()) {
+        capturedPhotos = [];
+        capturedBlob = null;
+        if (els.cameraFileInput) {
+          els.cameraFileInput.value = '';
+          els.cameraFileInput.click();
+        }
+      } else {
+        startCamera('environment');
+      }
     });
     els.openCameraBtn.addEventListener('keydown', e => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        startCamera('environment');
+        if (isMobileDevice()) {
+          capturedPhotos = [];
+          capturedBlob = null;
+          if (els.cameraFileInput) {
+            els.cameraFileInput.value = '';
+            els.cameraFileInput.click();
+          }
+        } else {
+          startCamera('environment');
+        }
       }
     });
   }
@@ -3444,6 +3671,12 @@ function bindEvents() {
   if (els.cameraLiveDoneBtn) {
     els.cameraLiveDoneBtn.addEventListener('click', confirmPhoto);
   }
+  if (els.cameraBlurRetakeBtn) {
+    els.cameraBlurRetakeBtn.addEventListener('click', retakePhoto);
+  }
+  if (els.cameraBlurAnywayBtn) {
+    els.cameraBlurAnywayBtn.addEventListener('click', hideBlurBanner);
+  }
   if (els.cameraRetryBtn) {
     els.cameraRetryBtn.addEventListener('click', () => startCamera(cameraFacingMode));
   }
@@ -3456,7 +3689,7 @@ function bindEvents() {
   if (els.cameraFileInput) {
     els.cameraFileInput.addEventListener('change', e => {
       if (e.target.files && e.target.files.length > 0) {
-        handleFiles(e.target.files);
+        handleNativeCameraCapture(e.target.files[0]);
       }
     });
   }

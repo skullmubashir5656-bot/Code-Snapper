@@ -1661,7 +1661,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
       }
 
       try {
-        console.log(`[CodeSnapper]   ${strategy}/${model} (timeout: ${currentAttemptTimeoutMs}ms)…`);
+        console.log(`[CodeSnapper]   ${strategy}/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
         const { res: gemRes, data, endpoint } = strategy === 'openai-compat'
           ? await tryOpenAIEndpoint(model, token, mimeType, imageData, currentAttemptTimeoutMs)
           : await tryNativeEndpoint(model, token, isBearer, nativeBody, currentAttemptTimeoutMs);
@@ -1672,9 +1672,13 @@ app.post('/api/extract', authenticate, async (req, res) => {
             : data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
           if (!text && data?.candidates?.[0]?.finishReason === 'SAFETY') {
+            console.warn(`[CodeSnapper] ⚠ Image blocked by Gemini safety filter on ${endpoint}/${model}:`, JSON.stringify(data?.candidates?.[0]?.safetyRatings || []));
             return res.status(422).json({ error: 'This image could not be processed. Please crop closely around the code and try again.', code: 'SAFETY_BLOCK' });
           }
-          if (!text) { continue; }
+          if (!text) {
+            console.warn(`[CodeSnapper] ⚠ Empty text returned from ${endpoint}/${model} (finishReason: ${data?.candidates?.[0]?.finishReason || 'unknown'}, candidates: ${JSON.stringify(data?.candidates || [])})`);
+            continue;
+          }
 
           /* ── Parse language & clean code directly from Gemini response ── */
           const parsed = parseGeminiOutput(text);
@@ -1683,7 +1687,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
           const totalDurationMs = Date.now() - imageStartTime;
           _lastSuccessfulApiCall = new Date().toISOString();
           _totalSuccessfulCalls++;
-          console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}] | Language: "${parsed.language}"`);
+          console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}] | Language: "${parsed.language}" | Code length: ${parsed.code.length} chars`);
 
           /* ── Increment usage counter ── */
           let remaining = null;
@@ -1711,7 +1715,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
         }
 
         const err = classifyGeminiError(gemRes.status, data);
-        console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | HTTP ${gemRes.status} | [${err.type}] ${err.msg}`);
+        console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | HTTP ${gemRes.status} | [${err.type}] ${err.msg} | Response: ${JSON.stringify(data?.error || data)}`);
 
         if (err.type === 'RATE_LIMIT' || gemRes.status === 429) {
           console.warn(`[CodeSnapper] ⚠ Rate limit (HTTP 429) on ${endpoint}/${model}, failing over to next model…`);
@@ -1737,7 +1741,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
                 const totalDurationMs = Date.now() - imageStartTime;
                 _lastSuccessfulApiCall = new Date().toISOString();
                 _totalSuccessfulCalls++;
-                console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms [fallback native/${model}] | Language: "${parsed.language}"`);
+                console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms [fallback native/${model}] | Language: "${parsed.language}" | Code length: ${parsed.code.length} chars`);
                 let remaining = null;
                 let shouldPromptRating = false;
                 let totalExtractions = 0;
@@ -1762,7 +1766,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
                 }
               }
             } else {
-              console.error(`[Auth] ✗ Static key fallback failed: HTTP ${fallbackRes.res.status}`);
+              console.error(`[Auth] ✗ Static key fallback failed: HTTP ${fallbackRes.res.status} | Details: ${JSON.stringify(fallbackRes.data?.error || fallbackRes.data)}`);
             }
           }
 
@@ -1789,7 +1793,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
         if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
           console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="${strategy}" after ${attemptDuration}ms. Failing over to next model immediately…`);
         } else {
-          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="${strategy}":`, networkErr.message);
+          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="${strategy}":`, networkErr.message, networkErr.stack || '');
         }
       }
     }

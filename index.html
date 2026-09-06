@@ -779,6 +779,20 @@
       <canvas id="camera-canvas" class="hidden"></canvas>
       <img id="camera-preview-img" class="hidden" alt="Captured code photo preview">
 
+      <!-- Blur Detection Warning / Error Banner -->
+      <div id="camera-blur-banner" class="camera-blur-banner hidden" role="alert">
+        <div class="camera-blur-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="camera-blur-content">
+          <p class="camera-blur-text" id="camera-blur-text">This photo looks blurry — please retake for better accuracy</p>
+          <div class="camera-blur-actions" id="camera-blur-actions">
+            <button type="button" class="btn btn-secondary btn-xs" id="camera-blur-retake-btn">Retake</button>
+            <button type="button" class="btn btn-ghost btn-xs hidden" id="camera-blur-anyway-btn" style="color:#fff;border-color:rgba(255,255,255,0.4)">Use Anyway</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Framing Guide Overlay (active during live camera) -->
       <div class="camera-framing-guide" id="camera-framing-guide">
         <div class="camera-corner top-left"></div>
