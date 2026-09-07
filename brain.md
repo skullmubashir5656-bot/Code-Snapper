@@ -11,8 +11,8 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 ## Extraction Flow
 1. User uploads image → state: **LOADING**
 2. Client sends image to `POST /api/extract`
-3. Server tries `gemini-2.5-flash` first (10s timeout) via Vertex AI endpoint
-4. If fails → exponential backoff delay → try `gemini-2.5-flash-lite` (10s timeout)
+3. Server tries `gemini-2.5-flash-lite` first (10s timeout) via Google AI Studio endpoint
+4. If fails → exponential backoff delay → try `gemini-2.5-flash` (10s timeout)
 5. If both fail → return error to client
 6. Client receives result → state: **RESULT**
 7. On ANY failure after all retries: show friendly error, return to **UPLOAD** state
@@ -20,11 +20,11 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 - **RULE**: Error popup must NEVER auto-show on page refresh — only after a real failed extraction.
 
 ## API Credentials & Endpoint
-- **Backend Endpoint**: Vertex AI / Gemini Enterprise Agent Platform (`https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${model}:generateContent`)
-- **Auth Header**: Bearer token only (`Authorization: Bearer ${token}`) — no `?key=` query parameters
-- **OAuth Scope**: `https://www.googleapis.com/auth/cloud-platform`
-- **Service Account**: `GOOGLE_SERVICE_ACCOUNT_JSON` authenticated via `google-auth-library` (auto-refreshed every 45 min)
-- **Models**: `gemini-2.5-flash` → `gemini-2.5-flash-lite`
+- **Backend Endpoint**: Google AI Studio native endpoint (`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`)
+- **Auth Method**: Send `GEMINI_API_KEY` via `x-goog-api-key` header ONLY — do NOT use `?key=` query param and do NOT use `Authorization: Bearer` for AQ. keys on this endpoint.
+- **Key Permanence**: AQ. keys are permanent — they do not expire. Use x-goog-api-key header on native endpoint only. Never use OpenAI-compatible endpoint.
+- **Service Account**: `GOOGLE_SERVICE_ACCOUNT_JSON` is reserved for Turso database / backend storage auth only — never used for Gemini calls.
+- **Models**: `gemini-2.5-flash-lite` → `gemini-2.5-flash`
 - **Timeouts**:
   - Per-model timeout: `10000ms` (10 seconds)
   - Server total maximum timeout: `22000ms` (22 seconds)

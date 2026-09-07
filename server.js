@@ -47,34 +47,13 @@ const JWT_EXPIRY  = '30d';
 const USERS_FILE  = path.join(__dirname, 'users.json');
 const AUTH_LIMIT  = 50;                    // extractions per rolling window
 const WINDOW_MS   = 24 * 60 * 60 * 1000;  // 24-hour rolling window
-/* ─── Gemini / Vertex AI config ──────────────────────────────────────────── */
-const PROJECT_ID = process.env.VERTEX_PROJECT_ID;
-const REGION = process.env.VERTEX_REGION || 'us-central1';
+/* ─── Gemini config ──────────────────────────────────────────────────────── */
+const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-function getVertexProjectId() {
-  if (process.env.VERTEX_PROJECT_ID && process.env.VERTEX_PROJECT_ID.trim()) {
-    return process.env.VERTEX_PROJECT_ID.trim();
-  }
-  const rawCred = findServiceAccountRaw();
-  if (rawCred) {
-    try {
-      const parsed = parseServiceAccountJson(rawCred.value);
-      if (parsed && parsed.project_id) return parsed.project_id;
-    } catch (_) {}
-  }
-  return (process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || process.env.GCP_PROJECT_ID || '').trim();
-}
-
-function getVertexEndpointUrl(model) {
-  const projectId = process.env.VERTEX_PROJECT_ID || getVertexProjectId();
-  const region = process.env.VERTEX_REGION || 'us-central1';
-  return `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
-}
-
-// Verified model names for Vertex AI / Enterprise Agent Platform endpoint
+// Verified ultra-low-latency models: primary ultra-fast model -> fast fallback
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
+  'gemini-2.5-flash',
 ];
 
 const PER_MODEL_TIMEOUT_MS       = 10000; // 10 seconds max per model attempt (generous for dense vision images)
@@ -102,212 +81,30 @@ STRICT OUTPUT FORMAT — FOLLOW EXACTLY:
 
 Transcribe the code now:`;
 
-/* ─── Credential resolver & Automatic Token Refresh (45-Minute Window) ────── */
-const GEMINI_SCOPES = [
-  'https://www.googleapis.com/auth/cloud-platform',
-];
-
-const TOKEN_REFRESH_INTERVAL_MS = 45 * 60 * 1000; // 45 minutes
-
-let _cachedToken = (process.env.GEMINI_API_KEY || '').trim();
-let _tokenLoadedAt = Date.now();
-let _authClient = null;
-let _isServiceAccountActive = false;
-let _serviceAccountEmail = null;
-let _lastAuthError = null;
+/* ─── Gemini Credentials & Tracking ───────────────────────────────────────── */
 let _lastSuccessfulApiCall = null;
 let _totalSuccessfulCalls = 0;
 
 /**
- * Searches environment variables for service account credentials across all common keys.
- */
-function findServiceAccountRaw() {
-  const candidateKeys = [
-    'GOOGLE_SERVICE_ACCOUNT_JSON',
-    'GOOGLE_APPLICATION_CREDENTIALS',
-    'GCP_SERVICE_ACCOUNT',
-    'SERVICE_ACCOUNT_JSON',
-    'GCP_KEY',
-    'GCP_SA_KEY',
-  ];
-  for (const key of candidateKeys) {
-    const val = process.env[key];
-    if (val && typeof val === 'string' && val.trim()) {
-      return { key, value: val.trim() };
-    }
-  }
-  return null;
-}
-
-/**
- * Robustly parses service account credentials from raw strings, file paths, base64, or quoted strings.
- */
-function parseServiceAccountJson(rawInput) {
-  if (!rawInput || typeof rawInput !== 'string') return null;
-  let str = rawInput.trim();
-
-  // 1. If pointing to a file path that exists on disk (e.g. Render Secret Files)
-  if (fs.existsSync(str)) {
-    try {
-      str = fs.readFileSync(str, 'utf8').trim();
-    } catch (err) {
-      throw new Error(`Failed to read credential file at "${rawInput}": ${err.message}`);
-    }
-  }
-
-  // 2. Strip wrapping single or double quotes if present
-  if ((str.startsWith("'") && str.endsWith("'")) || (str.startsWith('"') && str.endsWith('"'))) {
-    str = str.slice(1, -1).trim();
-  }
-
-  // 3. If base64 encoded (common on Render to avoid multi-line issues)
-  if (!str.startsWith('{')) {
-    try {
-      const decoded = Buffer.from(str, 'base64').toString('utf8').trim();
-      if (decoded.startsWith('{')) {
-        str = decoded;
-      }
-    } catch (_) {}
-  }
-
-  // 4. Parse JSON
-  let creds;
-  try {
-    creds = JSON.parse(str);
-  } catch (err) {
-    try {
-      const unescaped = str.replace(/\\"/g, '"');
-      creds = JSON.parse(unescaped);
-    } catch (err2) {
-      throw new Error(`Invalid JSON syntax in service account credential: ${err.message}`);
-    }
-  }
-
-  // 5. Validate essential fields
-  if (!creds.client_email || !creds.private_key) {
-    throw new Error(`Service account JSON missing required fields (client_email: ${!!creds.client_email}, private_key: ${!!creds.private_key})`);
-  }
-
-  // 6. Normalize private key newlines
-  if (typeof creds.private_key === 'string' && creds.private_key.includes('\\n')) {
-    creds.private_key = creds.private_key.replace(/\\n/g, '\n');
-  }
-
-  return creds;
-}
-
-/**
- * Checks token age and mints fresh token using GoogleAuth service account or GEMINI_API_KEY.
- */
-async function refreshTokenIfNeeded(force = false) {
-  const ageMs = Date.now() - _tokenLoadedAt;
-  if (!force && _cachedToken && ageMs < TOKEN_REFRESH_INTERVAL_MS && _isServiceAccountActive) {
-    return _cachedToken;
-  }
-
-  const nowIso = new Date().toISOString();
-  const rawCred = findServiceAccountRaw();
-
-  // 1. Try GoogleAuth via service account credentials
-  if (GoogleAuth && rawCred) {
-    try {
-      const credentials = parseServiceAccountJson(rawCred.value);
-      _serviceAccountEmail = credentials.client_email;
-
-      if (!_authClient || force) {
-        const auth = new GoogleAuth({ credentials, scopes: GEMINI_SCOPES });
-        _authClient = await auth.getClient();
-      }
-
-      const tokenObj = await _authClient.getAccessToken();
-      if (tokenObj && tokenObj.token) {
-        _cachedToken = tokenObj.token;
-        _tokenLoadedAt = Date.now();
-        _isServiceAccountActive = true;
-        _lastAuthError = null;
-        const prefix = _cachedToken.slice(0, 10);
-        console.log(`[Auth] [${nowIso}] ✓ Token refreshed via GoogleAuth service account (${prefix}…) [${credentials.client_email}]`);
-        return _cachedToken;
-      } else {
-        throw new Error('GoogleAuth getAccessToken() returned empty token');
-      }
-    } catch (err) {
-      _lastAuthError = err.message;
-      console.error(`[Auth] [${nowIso}] ✗ Service account auth failed (${rawCred.key}):`, err.message);
-      if (err.stack) console.error(err.stack);
-    }
-  }
- 
-  // 2. Fallback to static GEMINI_API_KEY only if NO service account credentials exist
-  if (!rawCred) {
-    const staticKey = (process.env.GEMINI_API_KEY || '').trim();
-    if (staticKey && staticKey !== 'your_gemini_api_key_here') {
-      _cachedToken = staticKey;
-      _tokenLoadedAt = Date.now();
-      _isServiceAccountActive = false;
-      const prefix = staticKey.slice(0, 10);
-      console.warn(`[Auth] [${nowIso}] ⚠ Using static API key (${prefix}…). Service account is NOT active — this key will expire hourly if starting with AQ.!`);
-      return _cachedToken;
-    }
-  }
-
-  throw new Error('No valid Gemini credentials found. Please set GOOGLE_SERVICE_ACCOUNT_JSON or GEMINI_API_KEY.');
-}
-
-/**
- * Returns the credential to use for this request.
- * Automatically checks token age (< 45 min) and refreshes when needed.
+ * Returns the Gemini API Key to use for API calls via x-goog-api-key header.
  * @returns {{ token: string, mode: string, isBearer: boolean, format: string }}
  */
 async function getGeminiToken() {
-  await refreshTokenIfNeeded(false);
-
-  const isSaMode = !!(findServiceAccountRaw() || process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-
-  if (!_cachedToken || _cachedToken === 'your_gemini_api_key_here') {
-    const err = new Error('No Gemini API key or credentials configured.');
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+    const err = new Error('No valid GEMINI_API_KEY configured in environment variables.');
     err.code = 'SERVER_CONFIG_ERROR';
     throw err;
   }
 
-  if (isSaMode) {
-    // Service account mode — NEVER use GEMINI_API_KEY
-    // getValidToken() must ALWAYS use google-auth-library OAuth bearer tokens
-    // Throw error if getValidToken() returns anything starting with AQ. or AIza
-    if (_cachedToken.startsWith('AQ.') || _cachedToken.startsWith('AIza')) {
-      const err = new Error('Service account mode is active, but a static API key was detected instead of an OAuth bearer token.');
-      err.code = 'INVALID_CREDENTIAL_TYPE';
-      throw err;
-    }
-    return {
-      token: _cachedToken,
-      mode: 'service-account',
-      isBearer: true,
-      format: 'OAuth (ya29)',
-    };
-  }
-
-  let tokenToUse = _cachedToken;
-  let isBearer = _cachedToken.startsWith('ya29.');
-
-  // If service account is NOT active, check if static key is configured
-  if (!_isServiceAccountActive) {
-    const staticKey = (process.env.GEMINI_API_KEY || '').trim();
-    if (staticKey && staticKey !== 'your_gemini_api_key_here') {
-      tokenToUse = staticKey;
-      isBearer = staticKey.startsWith('ya29.');
-    }
-  }
-
-  const format = tokenToUse.startsWith('AQ.') ? 'AQ.'
-               : tokenToUse.startsWith('AIza') ? 'AIza'
-               : tokenToUse.startsWith('ya29.') ? 'OAuth (ya29)'
-               : 'Standard';
+  const format = apiKey.startsWith('AQ.') ? 'AQ.'
+               : apiKey.startsWith('AIza') ? 'AIza'
+               : 'API Key';
 
   return {
-    token: tokenToUse,
-    mode: _isServiceAccountActive ? 'service-account' : 'api-key',
-    isBearer,
+    token: apiKey,
+    mode: 'api-key',
+    isBearer: false,
     format,
   };
 }
@@ -1490,31 +1287,12 @@ function classifyGeminiError(status, data) {
 
 const MODEL_TIMEOUT_MS = 15000; // 15 seconds timeout per model attempt
 
-/* ─── Gemini strategies ──────────────────────────────────────────────────── */
-async function tryOpenAIEndpoint(model, token, mimeType, imageData, timeoutMs = PER_MODEL_TIMEOUT_MS) {
-  const body = {
-    model,
-    messages: [{ role: 'user', content: [
-      { type: 'text', text: EXTRACTION_PROMPT },
-      { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageData}` } },
-    ]}],
-    temperature: 0.05,
-    max_tokens:  8192,
-  };
-  const res  = await fetch(GEMINI_OPENAI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-    body:   JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const data = await res.json().catch(() => ({}));
-  return { res, data, endpoint: 'openai-compat' };
-}
-
+/* ─── Gemini Strategy ────────────────────────────────────────────────────── */
 async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs = PER_MODEL_TIMEOUT_MS) {
-  const url = getVertexEndpointUrl(model);
+  const apiKey = token || (process.env.GEMINI_API_KEY || '').trim();
+  const url = `${GEMINI_NATIVE_BASE}/${model}:generateContent`;
   const headers = {
-    'Authorization': `Bearer ${token}`,
+    'x-goog-api-key': apiKey,
     'Content-Type': 'application/json',
   };
   const res = await fetch(url, {
@@ -1524,7 +1302,7 @@ async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs 
     signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await res.json().catch(() => ({}));
-  return { res, data, endpoint: 'vertex-ai' };
+  return { res, data, endpoint: 'native' };
 }
 
 /* ─── Gemini Response Parser (Language & Code Extraction) ─────────────────── */
@@ -1707,7 +1485,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
     const currentAttemptTimeoutMs = Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - elapsedBeforeModel);
 
     try {
-      console.log(`[CodeSnapper]   vertex-ai/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
+      console.log(`[CodeSnapper]   native/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
       const { res: gemRes, data, endpoint } = await tryNativeEndpoint(model, modelToken, modelIsBearer, nativeBody, currentAttemptTimeoutMs);
 
       if (gemRes.ok) {
@@ -1766,30 +1544,16 @@ app.post('/api/extract', authenticate, async (req, res) => {
         }
 
         if (['AUTH_TOKEN_UNSUPPORTED', 'INVALID_KEY', 'ACCESS_DENIED'].includes(err.type) || gemRes.status === 401 || gemRes.status === 403) {
-          // If service account is configured, try emergency token refresh once
-          if (!hardAuthError && (_isServiceAccountActive || findServiceAccountRaw())) {
-            console.log('[Auth] ⚠ Auth error encountered during extraction. Attempting emergency token refresh via service account…');
-            try {
-              const freshToken = await refreshTokenIfNeeded(true);
-              if (freshToken && freshToken !== modelToken) {
-                modelToken = freshToken;
-                modelIsBearer = freshToken.startsWith('ya29.');
-                console.log(`[Auth] ✓ Emergency token refreshed (${modelToken.slice(0, 10)}…). Retrying request…`);
-                continue;
-              }
-            } catch (refErr) {
-              console.error('[Auth] ✗ Emergency refresh failed:', refErr.message);
-            }
-          }
-          hardAuthError = err; break;
+          hardAuthError = err;
+          break;
         }
 
       } catch (networkErr) {
         const attemptDuration = Date.now() - imageStartTime;
         if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
-          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="vertex-ai" after ${attemptDuration}ms. Failing over to next model immediately…`);
+          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="native" after ${attemptDuration}ms. Failing over to next model immediately…`);
         } else {
-          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="vertex-ai":`, networkErr.message, networkErr.stack || '');
+          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="native":`, networkErr.message, networkErr.stack || '');
         }
       }
     if (hardAuthError || totalTimeoutExceeded) break;
@@ -1826,22 +1590,22 @@ app.post('/api/extract', authenticate, async (req, res) => {
 
 /* ─── Health check endpoint (/health & /api/health) ───────────────────────── */
 app.get(['/health', '/api/health'], (_req, res) => {
-  const isAuthOk = !!_cachedToken && !_lastAuthError;
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const isAuthOk = !!apiKey && apiKey !== 'your_gemini_api_key_here';
   res.json({
     auth: isAuthOk ? 'ok' : 'failed',
-    method: _isServiceAccountActive ? 'service-account' : (_cachedToken ? 'api-key' : 'none'),
+    method: 'api-key',
     database: isTursoActive ? 'turso-persistent' : 'sqlite-local',
     isPersistent: isTursoActive,
     lastSuccess: _lastSuccessfulApiCall,
     totalSuccess: _totalSuccessfulCalls,
-    credentialPrefix: _cachedToken ? `${_cachedToken.slice(0, 10)}...` : 'none',
-    serviceAccountEmail: _serviceAccountEmail,
+    credentialPrefix: apiKey ? `${apiKey.slice(0, 10)}...` : 'none',
     models: GEMINI_MODELS,
     perModelTimeoutMs: PER_MODEL_TIMEOUT_MS,
     maxImageTotalTimeoutMs: MAX_IMAGE_TOTAL_TIMEOUT_MS,
     serverTime: new Date().toISOString(),
     status: isAuthOk ? 'ok' : 'error',
-    error: _lastAuthError
+    error: isAuthOk ? null : 'GEMINI_API_KEY not configured'
   });
 });
 
@@ -1851,13 +1615,14 @@ app.get('/api/test-gemini', async (_req, res) => {
   const start = Date.now();
   try {
     const cred = await getGeminiToken();
-    const endpointUrl = getVertexEndpointUrl(GEMINI_MODELS[0]);
-    log.push(`Cred: mode=${cred.mode}, isBearer=${cred.isBearer}, format=${cred.format}, tokenPrefix=${cred.token.slice(0, 10)}...`);
-    log.push(`Endpoint: ${endpointUrl}`);
+    const apiKey = cred.token;
+    const testUrl = `${GEMINI_NATIVE_BASE}/${GEMINI_MODELS[0]}:generateContent`;
+    log.push(`Cred: mode=api-key, format=${cred.format}, tokenPrefix=${apiKey.slice(0, 10)}...`);
+    log.push(`Endpoint: ${testUrl} via x-goog-api-key header`);
 
     const testBody = { contents: [{ parts: [{ text: 'Respond with OK' }] }] };
-    const r1 = await tryNativeEndpoint(GEMINI_MODELS[0], cred.token, cred.isBearer, testBody, 6000);
-    log.push(`Attempt 1 (${GEMINI_MODELS[0]} via Vertex AI): status=${r1.res.status}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
+    const r1 = await tryNativeEndpoint(GEMINI_MODELS[0], apiKey, false, testBody, 6000);
+    log.push(`Attempt 1 (${GEMINI_MODELS[0]} via Google AI Studio native): status=${r1.res.status}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
 
     res.json({ ok: r1.res.ok, status: r1.res.status, durationMs: Date.now() - start, log, data: r1.data });
   } catch (e) {
@@ -1874,87 +1639,44 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
   console.log('║          CodeSnapper is starting           ║');
   console.log('╚════════════════════════════════════════════╝');
 
-  const rawCred = findServiceAccountRaw();
-  const staticKey = (process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
-  // Priority 3: If neither exists → crash immediately on startup
-  if (!rawCred && (!staticKey || staticKey === 'your_gemini_api_key_here')) {
+  // If no GEMINI_API_KEY exists → crash immediately on startup
+  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
     console.error('\n❌ CRITICAL STARTUP ERROR:');
-    console.error('NO CREDENTIALS FOUND — set GEMINI_API_KEY or GOOGLE_SERVICE_ACCOUNT_JSON in environment');
+    console.error('NO GEMINI_API_KEY FOUND — set GEMINI_API_KEY in environment variables.');
     console.error('Shutting down server immediately.\n');
     process.exit(1);
   }
 
-  // Priority 1: If GOOGLE_SERVICE_ACCOUNT_JSON exists in environment → use google-auth-library to mint tokens
-  if (rawCred) {
-    console.log(`[Auth] Priority 1: Service Account detected in ${rawCred.key}. Minting token via google-auth-library...`);
-    try {
-      await refreshTokenIfNeeded(true);
-    } catch (err) {
-      console.error('[Auth] ✗ Service account initial token minting failed:', err.message);
-      if (!staticKey || staticKey === 'your_gemini_api_key_here') {
-        console.error('\n❌ CRITICAL ERROR: Service account authentication failed and no static GEMINI_API_KEY provided.');
-        console.error('NO CREDENTIALS FOUND — set GEMINI_API_KEY or GOOGLE_SERVICE_ACCOUNT_JSON in environment\n');
-        process.exit(1);
-      }
-    }
-  }
-
-  // Priority 2: If only GEMINI_API_KEY exists
-  if (!_isServiceAccountActive && staticKey && staticKey !== 'your_gemini_api_key_here') {
-    _cachedToken = staticKey;
-    _tokenLoadedAt = Date.now();
-    _isServiceAccountActive = false;
-    const prefix = staticKey.slice(0, 10);
-    console.log(`[Auth] Priority 2: Using static key (${prefix}…)`);
-  }
-
+  const prefix = apiKey.slice(0, 10);
+  console.log(`[Auth] Using GEMINI_API_KEY (${prefix}…) via x-goog-api-key header`);
   console.log('─────────────────────────────────────────────────────────────');
-  console.log(`[Auth] Status:            ${_cachedToken ? 'OK' : 'FAILED'}`);
-  console.log(`[Auth] Active Method:     ${_isServiceAccountActive ? 'service-account' : 'api-key'}`);
-  console.log(`[Auth] Loaded Credential: ${_cachedToken ? _cachedToken.slice(0, 10) + '...' : 'none'}`);
-  if (_isServiceAccountActive) {
-    console.log(`[Auth] Service Account:   ${_serviceAccountEmail}`);
-    console.log(`[Auth] Auto-refresh:      ✓ ENABLED — token will refresh automatically every 45 minutes`);
-  }
-  console.log(`[Vertex AI] Project:      ${process.env.VERTEX_PROJECT_ID || getVertexProjectId() || '(not set)'}`);
-  console.log(`[Vertex AI] Region:       ${process.env.VERTEX_REGION || 'us-central1'}`);
-  console.log(`[Vertex AI] Models:       ${GEMINI_MODELS.join(' → ')}`);
+  console.log(`[Auth] Status:            OK`);
+  console.log(`[Auth] Active Method:     api-key (x-goog-api-key)`);
+  console.log(`[Auth] Loaded Credential: ${prefix}...`);
+  console.log(`[Gemini] Endpoint:        generativelanguage.googleapis.com (native)`);
+  console.log(`[Gemini] Models:          ${GEMINI_MODELS.join(' → ')}`);
   console.log('─────────────────────────────────────────────────────────────');
 
-  // Startup test call to verify Vertex AI endpoint connectivity
-  if (_cachedToken) {
-    try {
-      const testModel = GEMINI_MODELS[0];
-      const testUrl = getVertexEndpointUrl(testModel);
-      console.log(`[Vertex AI] Performing startup connection test to ${testUrl}…`);
-      const testBody = {
-        contents: [{ parts: [{ text: 'ping' }] }],
-        generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
-      };
-      const testRes = await tryNativeEndpoint(testModel, _cachedToken, true, testBody, 6000);
-      if (testRes.res.ok) {
-        _lastSuccessfulApiCall = new Date().toISOString();
-        _totalSuccessfulCalls++;
-        console.log(`[Vertex AI] ✓ Startup connection test SUCCESSFUL (HTTP ${testRes.res.status})`);
-      } else {
-        console.warn(`[Vertex AI] ⚠ Startup connection test returned HTTP ${testRes.res.status}:`, JSON.stringify(testRes.data?.error || testRes.data));
-      }
-    } catch (testErr) {
-      console.warn(`[Vertex AI] ⚠ Startup connection test skipped or failed:`, testErr.message);
+  // Startup test call to verify Google AI Studio endpoint connectivity
+  try {
+    const testModel = GEMINI_MODELS[0];
+    console.log(`[Gemini] Performing startup connection test to generativelanguage.googleapis.com (${testModel}) via x-goog-api-key header…`);
+    const testBody = {
+      contents: [{ parts: [{ text: 'ping' }] }],
+      generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
+    };
+    const testRes = await tryNativeEndpoint(testModel, apiKey, false, testBody, 6000);
+    if (testRes.res.ok) {
+      _lastSuccessfulApiCall = new Date().toISOString();
+      _totalSuccessfulCalls++;
+      console.log(`[Gemini] ✓ Startup connection test SUCCESSFUL (HTTP ${testRes.res.status})`);
+    } else {
+      console.warn(`[Gemini] ⚠ Startup connection test returned HTTP ${testRes.res.status}:`, JSON.stringify(testRes.data?.error || testRes.data));
     }
-  }
-
-  // Auto-refresh every 45 minutes for service accounts
-  if (_isServiceAccountActive || rawCred) {
-    setInterval(async () => {
-      try {
-        console.log(`[Auth] [${new Date().toISOString()}] Scheduled 45-minute background auto-refresh running…`);
-        await refreshTokenIfNeeded(true);
-      } catch (err) {
-        console.error(`[Auth] [${new Date().toISOString()}] ✗ Scheduled 45-minute background refresh error:`, err.message);
-      }
-    }, TOKEN_REFRESH_INTERVAL_MS);
+  } catch (testErr) {
+    console.warn(`[Gemini] ⚠ Startup connection test skipped or failed:`, testErr.message);
   }
 
   app.listen(PORT, () => {
