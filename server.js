@@ -47,17 +47,18 @@ const JWT_EXPIRY  = '30d';
 const USERS_FILE  = path.join(__dirname, 'users.json');
 const AUTH_LIMIT  = 50;                    // extractions per rolling window
 const WINDOW_MS   = 24 * 60 * 60 * 1000;  // 24-hour rolling window
-/* ─── Gemini config ──────────────────────────────────────────────────────── */
-const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+/* ─── OpenRouter config ──────────────────────────────────────────────────── */
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Verified ultra-low-latency models: primary ultra-fast model -> fast fallback
+// Free vision-capable models on OpenRouter:
 const GEMINI_MODELS = [
-  'gemini-2.5-flash-lite',
-  'gemini-2.5-flash',
+  'google/gemini-2.5-flash-lite',  // free, fast
+  'google/gemini-2.5-flash',       // free fallback
+  'meta-llama/llama-3.2-11b-vision-instruct:free', // backup free model
 ];
 
 const PER_MODEL_TIMEOUT_MS       = 10000; // 10 seconds max per model attempt (generous for dense vision images)
-const MAX_IMAGE_TOTAL_TIMEOUT_MS = 22000; // 22 seconds max per image across both models combined
+const MAX_IMAGE_TOTAL_TIMEOUT_MS = 22000; // 22 seconds max per image across models combined
 
 const EXTRACTION_PROMPT = `You are CodeSnapper — a precision code extraction engine. Your ONLY task is to transcribe the source code visible in this image.
 
@@ -81,33 +82,34 @@ STRICT OUTPUT FORMAT — FOLLOW EXACTLY:
 
 Transcribe the code now:`;
 
-/* ─── Gemini Credentials & Tracking ───────────────────────────────────────── */
+/* ─── OpenRouter Credentials & Tracking ──────────────────────────────────── */
 let _lastSuccessfulApiCall = null;
 let _totalSuccessfulCalls = 0;
 
 /**
- * Returns the Gemini API Key to use for API calls via x-goog-api-key header.
+ * Returns the OpenRouter API Key from environment.
  * @returns {{ token: string, mode: string, isBearer: boolean, format: string }}
  */
-async function getGeminiToken() {
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
-    const err = new Error('No valid GEMINI_API_KEY configured in environment variables.');
+async function getOpenRouterToken() {
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  if (!apiKey || apiKey === 'your_openrouter_api_key_here') {
+    const err = new Error('No valid OPENROUTER_API_KEY configured in environment variables.');
     err.code = 'SERVER_CONFIG_ERROR';
     throw err;
   }
 
-  const format = apiKey.startsWith('AQ.') ? 'AQ.'
-               : apiKey.startsWith('AIza') ? 'AIza'
-               : 'API Key';
+  const format = apiKey.startsWith('sk-or-') ? 'sk-or-' : 'OpenRouter Key';
 
   return {
     token: apiKey,
-    mode: 'api-key',
-    isBearer: false,
+    mode: 'openrouter',
+    isBearer: true,
     format,
   };
 }
+
+// Legacy alias
+const getGeminiToken = getOpenRouterToken;
 
 /* ─── Middleware ─────────────────────────────────────────────────────────── */
 app.use(express.json({ limit: '25mb' }));
@@ -1262,22 +1264,19 @@ app.delete('/api/history/:id', authenticate, (req, res) => {
   res.json({ ok: true, id });
 });
 
-/* ─── Auth error classifier ──────────────────────────────────────────────── */
-function classifyGeminiError(status, data) {
-  const msg    = data?.error?.message || '';
-  const reason = data?.error?.status  || data?.error?.errors?.[0]?.reason || '';
+/* ─── OpenRouter error classifier ───────────────────────────────────────── */
+function classifyOpenRouterError(status, data) {
+  const msg    = data?.error?.message || data?.message || '';
+  const reason = data?.error?.code || data?.error?.metadata?.provider_name || '';
   const detail = { status, msg, reason, raw: JSON.stringify(data?.error || data) };
 
-  if (status === 401 || reason === 'ACCESS_TOKEN_TYPE_UNSUPPORTED')
-    return { ...detail, type: 'AUTH_TOKEN_UNSUPPORTED',
-      friendly: 'Something went wrong on our end. Please try again shortly.' };
-  if (status === 401 || msg.toLowerCase().includes('api key not valid'))
+  if (status === 401 || msg.toLowerCase().includes('user key') || msg.toLowerCase().includes('invalid api key'))
     return { ...detail, type: 'INVALID_KEY',
       friendly: 'Something went wrong on our end. Please try again shortly.' };
   if (status === 403)
     return { ...detail, type: 'ACCESS_DENIED',
       friendly: 'Something went wrong on our end. Please try again shortly.' };
-  if (status === 429)
+  if (status === 429 || msg.toLowerCase().includes('rate limit'))
     return { ...detail, type: 'RATE_LIMIT',
       friendly: 'Our service is experiencing high demand right now. Please wait a few seconds and try again.' };
   if (status === 404 || msg.includes('not found') || msg.includes('not support'))
@@ -1285,25 +1284,67 @@ function classifyGeminiError(status, data) {
   return { ...detail, type: 'API_ERROR', friendly: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.' };
 }
 
+const classifyGeminiError = classifyOpenRouterError;
 const MODEL_TIMEOUT_MS = 15000; // 15 seconds timeout per model attempt
 
-/* ─── Gemini Strategy ────────────────────────────────────────────────────── */
-async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs = PER_MODEL_TIMEOUT_MS) {
-  const apiKey = token || (process.env.GEMINI_API_KEY || '').trim();
-  const url = `${GEMINI_NATIVE_BASE}/${model}:generateContent`;
-  const headers = {
-    'x-goog-api-key': apiKey,
-    'Content-Type': 'application/json',
-  };
-  const res = await fetch(url, {
+/* ─── OpenRouter Strategy ────────────────────────────────────────────────── */
+async function tryOpenRouterExtraction(model, imageBase64, mimeType, timeoutMs = PER_MODEL_TIMEOUT_MS) {
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  const res = await fetch(OPENROUTER_BASE, {
     method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://code-snapper.onrender.com',
+      'X-Title': 'CodeSnapper'
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          { type: 'text', text: EXTRACTION_PROMPT }
+        ]
+      }],
+      max_tokens: 4000
+    }),
+    signal: AbortSignal.timeout(timeoutMs)
   });
   const data = await res.json().catch(() => ({}));
-  return { res, data, endpoint: 'native' };
+  const text = data?.choices?.[0]?.message?.content;
+  return { ok: res.ok, text, status: res.status, data, endpoint: 'openrouter' };
 }
+
+// Legacy alias
+const tryNativeEndpoint = async (model, _token, _isBearer, body, timeoutMs) => {
+  // If called from test or warmup, extract image or ping
+  const part = body?.contents?.[0]?.parts;
+  const imgPart = part?.find(p => p.inline_data);
+  const textPart = part?.find(p => p.text)?.text || '';
+  if (imgPart) {
+    return tryOpenRouterExtraction(model, imgPart.inline_data.data, imgPart.inline_data.mime_type, timeoutMs);
+  }
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  const res = await fetch(OPENROUTER_BASE, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://code-snapper.onrender.com',
+      'X-Title': 'CodeSnapper'
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [{ role: 'user', content: textPart || 'ping' }],
+      max_tokens: 10
+    }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  const data = await res.json().catch(() => ({}));
+  const text = data?.choices?.[0]?.message?.content;
+  return { res, ok: res.ok, text, status: res.status, data, endpoint: 'openrouter' };
+};
 
 /* ─── Gemini Response Parser (Language & Code Extraction) ─────────────────── */
 function parseGeminiOutput(raw) {
@@ -1323,7 +1364,7 @@ function parseGeminiOutput(raw) {
     // Remove the # LANGUAGE: line so the returned code is pure source code
     text = text.replace(/^[ \t]*#[ \t]*LANGUAGE:[ \t]*[^\r\n]*\r?\n?/im, '');
   } else {
-    // 2. Check if Gemini wrapped in markdown code fences with language identifier (e.g. ```python)
+    // 2. Check if LLM wrapped in markdown code fences with language identifier (e.g. ```python)
     const fenceMatch = text.match(/^```([a-zA-Z0-9_+#-]+)/m);
     if (fenceMatch) {
       const rawLang = fenceMatch[1].trim().toLowerCase();
@@ -1354,18 +1395,13 @@ function parseGeminiOutput(raw) {
   return { code, language: language || 'Code', ambiguities, noCode: !code.trim() };
 }
 
-/* ─── GET /warmup (Pre-warm Gemini connection & DNS cache) ─────────────────── */
+/* ─── GET /warmup (Pre-warm OpenRouter connection & DNS cache) ─────────────── */
 app.get('/warmup', async (_req, res) => {
   const start = Date.now();
   try {
-    const cred = await getGeminiToken();
-    const warmupBody = {
-      contents: [{ parts: [{ text: 'ping' }] }],
-      generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
-    };
-    const result = await tryNativeEndpoint(GEMINI_MODELS[0], cred.token, cred.isBearer, warmupBody, 4000);
+    await getOpenRouterToken();
     const durationMs = Date.now() - start;
-    return res.json({ status: 'warm', durationMs, httpStatus: result.res.status, isTurso: isTursoActive });
+    return res.json({ status: 'warm', durationMs, isTurso: isTursoActive });
   } catch (err) {
     return res.json({ status: 'warmed_network', durationMs: Date.now() - start, note: err.message, isTurso: isTursoActive });
   }
@@ -1375,21 +1411,13 @@ app.get('/warmup', async (_req, res) => {
 app.post('/api/extract', authenticate, async (req, res) => {
   const imageStartTime = Date.now();
 
-  const useServiceAccount = !!(findServiceAccountRaw() || process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-
-  /* ── 1. Initial Gemini token verification (auto-refreshed for service accounts) ── */
+  /* ── 1. Initial OpenRouter token verification ── */
   let initialCred;
   try {
-    initialCred = await getGeminiToken();
+    initialCred = await getOpenRouterToken();
   } catch (e) {
     const code = e.code || 'SERVER_CONFIG_ERROR';
     console.error('[CodeSnapper] ✗ Credential error:', e.message);
-    if (code === 'TOKEN_EXPIRED') {
-      return res.status(503).json({
-        error: 'Something went wrong on our end. Please try again shortly.',
-        code,
-      });
-    }
     return res.status(500).json({ error: 'Extraction failed — our service is temporarily unavailable. Please try again in a moment.', code });
   }
 
@@ -1432,22 +1460,7 @@ app.post('/api/extract', authenticate, async (req, res) => {
   const userLabel = req.user ? req.user.email : `anonymous (${clientIp})`;
   console.log(`\n[CodeSnapper] Extract ← ${userLabel} [cred: ${initialCred.mode}]`);
 
-  /* ── 4. Build native request body ── */
-  const nativeBody = {
-    contents: [{ parts: [
-      { text: EXTRACTION_PROMPT },
-      { inline_data: { mime_type: mimeType, data: imageData } },
-    ]}],
-    generationConfig: { temperature: 0.05, maxOutputTokens: 8192, topP: 0.9 },
-    safetySettings: [
-      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-    ],
-  };
-
-  /* ── 5. Try strategies across models ── */
+  /* ── 4. Try strategies across OpenRouter models ── */
   let hardAuthError = null;
   let rateLimitError = null;
   let totalTimeoutExceeded = false;
@@ -1457,23 +1470,10 @@ app.post('/api/extract', authenticate, async (req, res) => {
     // Add pause with exponential backoff before fallback attempts (2000ms for 1st fallback, 4000ms for 2nd)
     if (modelIndex > 0) {
       const pauseMs = 2000 * Math.pow(2, modelIndex - 1);
-      console.log(`[RateLimit] Quota exhausted on model "${GEMINI_MODELS[modelIndex - 1]}" — waiting ${pauseMs / 1000}s before fallback to "${model}"…`);
+      console.log(`[RateLimit] Switching model "${GEMINI_MODELS[modelIndex - 1]}" — waiting ${pauseMs / 1000}s before fallback to "${model}"…`);
       await new Promise(r => setTimeout(r, pauseMs));
     }
     modelIndex++;
-
-    /* ── Refresh/re-fetch token INSIDE the loop for every model attempt ── */
-    let currentCred;
-    try {
-      currentCred = await getGeminiToken();
-    } catch (e) {
-      console.error('[CodeSnapper] ✗ Credential error during model attempt:', e.message);
-      hardAuthError = { type: 'AUTH_ERROR', msg: e.message };
-      break;
-    }
-
-    let modelToken = currentCred.token;
-    let modelIsBearer = currentCred.isBearer;
 
     const elapsedBeforeModel = Date.now() - imageStartTime;
     if (elapsedBeforeModel >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
@@ -1485,77 +1485,66 @@ app.post('/api/extract', authenticate, async (req, res) => {
     const currentAttemptTimeoutMs = Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - elapsedBeforeModel);
 
     try {
-      console.log(`[CodeSnapper]   native/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
-      const { res: gemRes, data, endpoint } = await tryNativeEndpoint(model, modelToken, modelIsBearer, nativeBody, currentAttemptTimeoutMs);
+      console.log(`[CodeSnapper]   openrouter/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
+      const { ok, text, status, data, endpoint } = await tryOpenRouterExtraction(model, imageData, mimeType, currentAttemptTimeoutMs);
 
-      if (gemRes.ok) {
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (ok && text) {
+        /* ── Parse language & clean code directly from LLM response ── */
+        const parsed = parseGeminiOutput(text);
 
-          if (!text && data?.candidates?.[0]?.finishReason === 'SAFETY') {
-            console.warn(`[CodeSnapper] ⚠ Image blocked by Gemini safety filter on ${endpoint}/${model}:`, JSON.stringify(data?.candidates?.[0]?.safetyRatings || []));
-            return res.status(422).json({ error: 'This image could not be processed. Please crop closely around the code and try again.', code: 'SAFETY_BLOCK' });
-          }
-          if (!text) {
-            console.warn(`[CodeSnapper] ⚠ Empty text returned from ${endpoint}/${model} (finishReason: ${data?.candidates?.[0]?.finishReason || 'unknown'}, candidates: ${JSON.stringify(data?.candidates || [])})`);
-            continue;
-          }
+        /* ── Record API success and timing ── */
+        const totalDurationMs = Date.now() - imageStartTime;
+        _lastSuccessfulApiCall = new Date().toISOString();
+        _totalSuccessfulCalls++;
+        console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}] | Language: "${parsed.language}" | Code length: ${parsed.code.length} chars`);
 
-          /* ── Parse language & clean code directly from Gemini response ── */
-          const parsed = parseGeminiOutput(text);
-
-          /* ── Record API success and timing ── */
-          const totalDurationMs = Date.now() - imageStartTime;
-          _lastSuccessfulApiCall = new Date().toISOString();
-          _totalSuccessfulCalls++;
-          console.log(`[CodeSnapper] ✓ Image extraction completed in ${totalDurationMs}ms (${(totalDurationMs / 1000).toFixed(2)}s) [${endpoint}/${model}] | Language: "${parsed.language}" | Code length: ${parsed.code.length} chars`);
-
-          /* ── Increment usage counter ── */
-          let remaining = null;
-          let shouldPromptRating = false;
-          let totalExtractions = 0;
-          if (req.user) {
-            const user = await getUser(req.user.email);
-            if (user) {
-              await refreshWindow(user);
-              user.countInWindow = (user.countInWindow || 0) + 1;
-              user.totalExtractions = (user.totalExtractions || 0) + 1;
-              await saveUser(user);
-              remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
-              totalExtractions = user.totalExtractions;
-              if (totalExtractions === 30 && !user.hasRated) {
-                shouldPromptRating = true;
-              }
+        /* ── Increment usage counter ── */
+        let remaining = null;
+        let shouldPromptRating = false;
+        let totalExtractions = 0;
+        if (req.user) {
+          const user = await getUser(req.user.email);
+          if (user) {
+            await refreshWindow(user);
+            user.countInWindow = (user.countInWindow || 0) + 1;
+            user.totalExtractions = (user.totalExtractions || 0) + 1;
+            await saveUser(user);
+            remaining = Math.max(0, AUTH_LIMIT - user.countInWindow);
+            totalExtractions = user.totalExtractions;
+            if (totalExtractions === 30 && !user.hasRated) {
+              shouldPromptRating = true;
             }
-            return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint, remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
-          } else {
-            const newAnon = await incAnonUsage(clientIp);
-            remaining = newAnon.remaining;
-            return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint, remaining, durationMs: totalDurationMs });
           }
-        }
-
-        const err = classifyGeminiError(gemRes.status, data);
-        console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | HTTP ${gemRes.status} | [${err.type}] ${err.msg} | Response: ${JSON.stringify(data?.error || data)}`);
-
-        if (err.type === 'RATE_LIMIT' || gemRes.status === 429) {
-          console.warn(`[RateLimit] Quota exhausted on model ${model} — waiting before fallback`);
-          rateLimitError = err;
-          continue;
-        }
-
-        if (['AUTH_TOKEN_UNSUPPORTED', 'INVALID_KEY', 'ACCESS_DENIED'].includes(err.type) || gemRes.status === 401 || gemRes.status === 403) {
-          hardAuthError = err;
-          break;
-        }
-
-      } catch (networkErr) {
-        const attemptDuration = Date.now() - imageStartTime;
-        if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
-          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="native" after ${attemptDuration}ms. Failing over to next model immediately…`);
+          return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint, remaining, durationMs: totalDurationMs, shouldPromptRating, totalExtractions });
         } else {
-          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="native":`, networkErr.message, networkErr.stack || '');
+          const newAnon = await incAnonUsage(clientIp);
+          remaining = newAnon.remaining;
+          return res.json({ result: parsed.code, language: parsed.language, ambiguities: parsed.ambiguities, raw: text, model, endpoint, remaining, durationMs: totalDurationMs });
         }
       }
+
+      const err = classifyOpenRouterError(status, data);
+      console.error(`[CodeSnapper] ✗ Attempt failed: model="${model}" endpoint="${endpoint}" | HTTP ${status} | [${err.type}] ${err.msg} | Response: ${JSON.stringify(data?.error || data)}`);
+
+      if (err.type === 'RATE_LIMIT' || status === 429) {
+        console.warn(`[RateLimit] Quota exhausted on model ${model} — waiting before fallback`);
+        rateLimitError = err;
+        continue;
+      }
+
+      if (['INVALID_KEY', 'ACCESS_DENIED'].includes(err.type) || status === 401 || status === 403) {
+        hardAuthError = err;
+        break;
+      }
+
+    } catch (networkErr) {
+      const attemptDuration = Date.now() - imageStartTime;
+      if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
+        console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="openrouter" after ${attemptDuration}ms. Failing over to next model immediately…`);
+      } else {
+        console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="openrouter":`, networkErr.message, networkErr.stack || '');
+      }
+    }
     if (hardAuthError || totalTimeoutExceeded) break;
   }
 
@@ -1590,11 +1579,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
 
 /* ─── Health check endpoint (/health & /api/health) ───────────────────────── */
 app.get(['/health', '/api/health'], (_req, res) => {
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
-  const isAuthOk = !!apiKey && apiKey !== 'your_gemini_api_key_here';
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
+  const isAuthOk = !!apiKey && apiKey !== 'your_openrouter_api_key_here';
   res.json({
     auth: isAuthOk ? 'ok' : 'failed',
-    method: 'api-key',
+    method: 'openrouter',
     database: isTursoActive ? 'turso-persistent' : 'sqlite-local',
     isPersistent: isTursoActive,
     lastSuccess: _lastSuccessfulApiCall,
@@ -1605,26 +1594,25 @@ app.get(['/health', '/api/health'], (_req, res) => {
     maxImageTotalTimeoutMs: MAX_IMAGE_TOTAL_TIMEOUT_MS,
     serverTime: new Date().toISOString(),
     status: isAuthOk ? 'ok' : 'error',
-    error: isAuthOk ? null : 'GEMINI_API_KEY not configured'
+    error: isAuthOk ? null : 'OPENROUTER_API_KEY not configured'
   });
 });
 
-/* ─── Direct live Gemini test endpoint ───────────────────────────────────── */
-app.get('/api/test-gemini', async (_req, res) => {
+/* ─── Direct live OpenRouter test endpoint ────────────────────────────────── */
+app.get(['/api/test-openrouter', '/api/test-gemini'], async (_req, res) => {
   const log = [];
   const start = Date.now();
   try {
-    const cred = await getGeminiToken();
+    const cred = await getOpenRouterToken();
     const apiKey = cred.token;
-    const testUrl = `${GEMINI_NATIVE_BASE}/${GEMINI_MODELS[0]}:generateContent`;
-    log.push(`Cred: mode=api-key, format=${cred.format}, tokenPrefix=${apiKey.slice(0, 10)}...`);
-    log.push(`Endpoint: ${testUrl} via x-goog-api-key header`);
+    log.push(`Cred: mode=openrouter, format=${cred.format}, tokenPrefix=${apiKey.slice(0, 10)}...`);
+    log.push(`Endpoint: ${OPENROUTER_BASE}`);
 
-    const testBody = { contents: [{ parts: [{ text: 'Respond with OK' }] }] };
-    const r1 = await tryNativeEndpoint(GEMINI_MODELS[0], apiKey, false, testBody, 6000);
-    log.push(`Attempt 1 (${GEMINI_MODELS[0]} via Google AI Studio native): status=${r1.res.status}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
+    const sample1x1Png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const r1 = await tryOpenRouterExtraction(GEMINI_MODELS[0], sample1x1Png, 'image/png', 8000);
+    log.push(`Attempt 1 (${GEMINI_MODELS[0]} via OpenRouter): status=${r1.status}, text=${(r1.text || '').slice(0, 100)}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
 
-    res.json({ ok: r1.res.ok, status: r1.res.status, durationMs: Date.now() - start, log, data: r1.data });
+    res.json({ ok: r1.ok, status: r1.status, durationMs: Date.now() - start, log, data: r1.data });
   } catch (e) {
     res.json({ ok: false, durationMs: Date.now() - start, error: e.message, log });
   }
@@ -1639,44 +1627,41 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
   console.log('║          CodeSnapper is starting           ║');
   console.log('╚════════════════════════════════════════════╝');
 
-  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  const apiKey = (process.env.OPENROUTER_API_KEY || '').trim();
 
-  // If no GEMINI_API_KEY exists → crash immediately on startup
-  if (!apiKey || apiKey === 'your_gemini_api_key_here') {
+  // If no OPENROUTER_API_KEY exists → crash immediately on startup
+  if (!apiKey || apiKey === 'your_openrouter_api_key_here') {
     console.error('\n❌ CRITICAL STARTUP ERROR:');
-    console.error('NO GEMINI_API_KEY FOUND — set GEMINI_API_KEY in environment variables.');
+    console.error('NO OPENROUTER_API_KEY FOUND — set OPENROUTER_API_KEY in environment variables.');
     console.error('Shutting down server immediately.\n');
     process.exit(1);
   }
 
   const prefix = apiKey.slice(0, 10);
-  console.log(`[Auth] Using GEMINI_API_KEY (${prefix}…) via x-goog-api-key header`);
+  console.log(`[Auth] Using OPENROUTER_API_KEY (${prefix}…)`);
   console.log('─────────────────────────────────────────────────────────────');
   console.log(`[Auth] Status:            OK`);
-  console.log(`[Auth] Active Method:     api-key (x-goog-api-key)`);
+  console.log(`[Auth] Active Method:     openrouter (Bearer)`);
   console.log(`[Auth] Loaded Credential: ${prefix}...`);
-  console.log(`[Gemini] Endpoint:        generativelanguage.googleapis.com (native)`);
-  console.log(`[Gemini] Models:          ${GEMINI_MODELS.join(' → ')}`);
+  console.log(`[Provider] Endpoint:      openrouter.ai/api/v1/chat/completions`);
+  console.log(`[Provider] Models:        ${GEMINI_MODELS.join(' → ')}`);
   console.log('─────────────────────────────────────────────────────────────');
 
-  // Startup test call to verify Google AI Studio endpoint connectivity
+  // Startup test call to verify OpenRouter endpoint connectivity
   try {
     const testModel = GEMINI_MODELS[0];
-    console.log(`[Gemini] Performing startup connection test to generativelanguage.googleapis.com (${testModel}) via x-goog-api-key header…`);
-    const testBody = {
-      contents: [{ parts: [{ text: 'ping' }] }],
-      generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
-    };
-    const testRes = await tryNativeEndpoint(testModel, apiKey, false, testBody, 6000);
-    if (testRes.res.ok) {
+    console.log(`[OpenRouter] Performing startup connection test to openrouter.ai (${testModel})…`);
+    const sample1x1Png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    const testRes = await tryOpenRouterExtraction(testModel, sample1x1Png, 'image/png', 8000);
+    if (testRes.ok) {
       _lastSuccessfulApiCall = new Date().toISOString();
       _totalSuccessfulCalls++;
-      console.log(`[Gemini] ✓ Startup connection test SUCCESSFUL (HTTP ${testRes.res.status})`);
+      console.log(`[OpenRouter] ✓ Startup connection test SUCCESSFUL (HTTP ${testRes.status})`);
     } else {
-      console.warn(`[Gemini] ⚠ Startup connection test returned HTTP ${testRes.res.status}:`, JSON.stringify(testRes.data?.error || testRes.data));
+      console.warn(`[OpenRouter] ⚠ Startup connection test returned HTTP ${testRes.status}:`, JSON.stringify(testRes.data?.error || testRes.data));
     }
   } catch (testErr) {
-    console.warn(`[Gemini] ⚠ Startup connection test skipped or failed:`, testErr.message);
+    console.warn(`[OpenRouter] ⚠ Startup connection test skipped or failed:`, testErr.message);
   }
 
   app.listen(PORT, () => {

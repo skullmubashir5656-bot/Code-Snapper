@@ -11,20 +11,20 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 ## Extraction Flow
 1. User uploads image → state: **LOADING**
 2. Client sends image to `POST /api/extract`
-3. Server tries `gemini-2.5-flash-lite` first (10s timeout) via Google AI Studio endpoint
-4. If fails → exponential backoff delay → try `gemini-2.5-flash` (10s timeout)
-5. If both fail → return error to client
-6. Client receives result → state: **RESULT**
-7. On ANY failure after all retries: show friendly error, return to **UPLOAD** state
+3. Server tries `google/gemini-2.5-flash-lite` first (10s timeout) via OpenRouter API
+4. If fails → exponential backoff delay → try `google/gemini-2.5-flash` (10s timeout)
+5. If fails → try backup `meta-llama/llama-3.2-11b-vision-instruct:free`
+6. If all fail → return error to client
+7. Client receives result → state: **RESULT**
+8. On ANY failure after all retries: show friendly error, return to **UPLOAD** state
 - **RULE**: Never show "Retrying", "attempt X of Y", or any model names to users.
 - **RULE**: Error popup must NEVER auto-show on page refresh — only after a real failed extraction.
 
 ## API Credentials & Endpoint
-- **Backend Endpoint**: Google AI Studio native endpoint (`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`)
-- **Auth Method**: Send `GEMINI_API_KEY` via `x-goog-api-key` header ONLY — do NOT use `?key=` query param and do NOT use `Authorization: Bearer` for AQ. keys on this endpoint.
-- **Key Permanence**: AQ. keys are permanent — they do not expire. Use x-goog-api-key header on native endpoint only. Never use OpenAI-compatible endpoint.
-- **Service Account**: `GOOGLE_SERVICE_ACCOUNT_JSON` is reserved for Turso database / backend storage auth only — never used for Gemini calls.
-- **Models**: `gemini-2.5-flash-lite` → `gemini-2.5-flash`
+- Extraction uses OpenRouter API (openrouter.ai) with permanent sk-or- key. Models: google/gemini-2.5-flash-lite → google/gemini-2.5-flash → llama-3.2-vision:free. Key never expires.
+- **Backend Endpoint**: `https://openrouter.ai/api/v1/chat/completions`
+- **Auth Method**: Bearer token via `Authorization: Bearer ${process.env.OPENROUTER_API_KEY}`
+- **Database Auth**: `GOOGLE_SERVICE_ACCOUNT_JSON` is reserved for Turso database / backend storage auth only.
 - **Timeouts**:
   - Per-model timeout: `10000ms` (10 seconds)
   - Server total maximum timeout: `22000ms` (22 seconds)
@@ -114,7 +114,7 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 
 ## What Must Never Change Without Updating This File
 - State machine transition logic (`showPanel`)
-- Model fallback chain order (`gemini-3.5-flash-lite` → `gemini-3.5-flash`)
+- Model fallback chain order (`google/gemini-2.5-flash-lite` → `google/gemini-2.5-flash` → `meta-llama/llama-3.2-11b-vision-instruct:free`)
 - Timeout values (`10s` per model, `22s` server max, `30s` client fetch)
 - Error message wording (clean, non-technical, single "Try Again" CTA)
 - Database table structure and case-insensitive email matching
