@@ -1472,6 +1472,12 @@ async function handleBatchFiles(files) {
     return;
   }
 
+  if (state.authToken) {
+    await fetchUserUsage();
+  } else {
+    await fetchAnonStatus();
+  }
+
   renderBatchPreview();
   showPanel('batch-preview');
 }
@@ -1494,7 +1500,7 @@ function renderBatchPreview() {
   // Calculate upfront remaining quota
   const remaining = state.authToken
     ? (state.authRemaining !== null ? state.authRemaining : 50)
-    : (state.anonRemaining !== null ? state.anonRemaining : 0);
+    : (state.anonRemaining !== null ? state.anonRemaining : 25);
 
   if (remaining < count) {
     els.batchLimitWarning.classList.remove('hidden');
@@ -2571,17 +2577,36 @@ async function runBatchExtraction() {
   const count = state.batchItems.length;
   if (count === 0) return;
 
+  // Always fetch fresh status immediately before batch starts — never rely on stale/cached state
   let remaining = 0;
   if (state.authToken) {
-    await fetchUserUsage();
-    remaining = (state.authRemaining !== null && state.authRemaining !== undefined) ? Number(state.authRemaining) : 50;
+    const userUsage = await fetchUserUsage();
+    remaining = (userUsage && userUsage.remaining !== undefined)
+      ? Number(userUsage.remaining)
+      : (state.authRemaining !== null ? Number(state.authRemaining) : 50);
   } else {
-    const statusData = await fetchAnonStatus();
-    remaining = (statusData && statusData.remaining !== undefined) ? Number(statusData.remaining) : (state.anonRemaining !== null ? Number(state.anonRemaining) : 0);
+    try {
+      const res = await fetch('/api/anon/status');
+      if (res.ok) {
+        const freshStatus = await res.json();
+        remaining = freshStatus.remaining !== undefined
+          ? Number(freshStatus.remaining)
+          : Math.max(0, 25 - Number(freshStatus.count || 0));
+        state.anonRemaining = remaining;
+        state.anonCount = Number(freshStatus.count || (25 - remaining));
+        updateUsageUI();
+      } else {
+        const statusData = await fetchAnonStatus();
+        remaining = (statusData && statusData.remaining !== undefined) ? Number(statusData.remaining) : 25;
+      }
+    } catch {
+      const statusData = await fetchAnonStatus();
+      remaining = (statusData && statusData.remaining !== undefined) ? Number(statusData.remaining) : 25;
+    }
   }
 
-  // Explicit zero check BEFORE Math.min or slicing
-  if (remaining <= 0) {
+  const canProcess = Math.min(remaining, count);
+  if (canProcess === 0) {
     if (state.authToken) {
       showError('You have reached your daily quota of 50 extractions. Please wait until your quota resets in 24 hours.', 'Daily Quota Reached');
     } else {
@@ -2591,7 +2616,11 @@ async function runBatchExtraction() {
     return;
   }
 
-  const itemsToProcess = state.batchItems.slice(0, remaining);
+  if (canProcess < count) {
+    showToast(`You have ${remaining} extractions remaining — only the first ${remaining} images will be processed`, 'warning');
+  }
+
+  const itemsToProcess = state.batchItems.slice(0, canProcess);
   const total = itemsToProcess.length;
 
   state.batchResults = [];
@@ -2602,6 +2631,8 @@ async function runBatchExtraction() {
   for (let i = 0; i < total; i++) {
     const item = itemsToProcess[i];
     const num = i + 1;
+    const progressPct = Math.round((num / total) * 100);
+
     // 500ms sequential pacing delay between batch images
     if (i > 0) {
       await delay(500);
