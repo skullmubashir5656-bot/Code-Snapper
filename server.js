@@ -47,14 +47,34 @@ const JWT_EXPIRY  = '30d';
 const USERS_FILE  = path.join(__dirname, 'users.json');
 const AUTH_LIMIT  = 50;                    // extractions per rolling window
 const WINDOW_MS   = 24 * 60 * 60 * 1000;  // 24-hour rolling window
-/* ─── Gemini config ──────────────────────────────────────────────────────── */
-const GEMINI_NATIVE_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-const GEMINI_OPENAI_URL  = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+/* ─── Gemini / Vertex AI config ──────────────────────────────────────────── */
+const PROJECT_ID = process.env.VERTEX_PROJECT_ID;
+const REGION = process.env.VERTEX_REGION || 'us-central1';
 
-// Verified ultra-low-latency models: primary ultra-fast model -> one fast fallback
+function getVertexProjectId() {
+  if (process.env.VERTEX_PROJECT_ID && process.env.VERTEX_PROJECT_ID.trim()) {
+    return process.env.VERTEX_PROJECT_ID.trim();
+  }
+  const rawCred = findServiceAccountRaw();
+  if (rawCred) {
+    try {
+      const parsed = parseServiceAccountJson(rawCred.value);
+      if (parsed && parsed.project_id) return parsed.project_id;
+    } catch (_) {}
+  }
+  return (process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || process.env.GCP_PROJECT_ID || '').trim();
+}
+
+function getVertexEndpointUrl(model) {
+  const projectId = process.env.VERTEX_PROJECT_ID || getVertexProjectId();
+  const region = process.env.VERTEX_REGION || 'us-central1';
+  return `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${model}:generateContent`;
+}
+
+// Verified model names for Vertex AI / Enterprise Agent Platform endpoint
 const GEMINI_MODELS = [
-  'gemini-3.5-flash-lite', // Primary model (fastest response time ~688ms–1400ms, highest success rate)
-  'gemini-3.5-flash',      // Fast reliable fallback
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
 ];
 
 const PER_MODEL_TIMEOUT_MS       = 10000; // 10 seconds max per model attempt (generous for dense vision images)
@@ -84,7 +104,6 @@ Transcribe the code now:`;
 
 /* ─── Credential resolver & Automatic Token Refresh (45-Minute Window) ────── */
 const GEMINI_SCOPES = [
-  'https://www.googleapis.com/auth/generative-language',
   'https://www.googleapis.com/auth/cloud-platform',
 ];
 
@@ -1493,21 +1512,19 @@ async function tryOpenAIEndpoint(model, token, mimeType, imageData, timeoutMs = 
 }
 
 async function tryNativeEndpoint(model, token, isBearer, requestBody, timeoutMs = PER_MODEL_TIMEOUT_MS) {
-  const isActuallyBearer = isBearer || (typeof token === 'string' && token.startsWith('ya29.'));
-  const url = isActuallyBearer
-    ? `${GEMINI_NATIVE_BASE}/${model}:generateContent`
-    : `${GEMINI_NATIVE_BASE}/${model}:generateContent?key=${token}`;
-  const headers = isActuallyBearer
-    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }
-    : { 'Content-Type': 'application/json' };
-  const res  = await fetch(url, {
+  const url = getVertexEndpointUrl(model);
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+  const res = await fetch(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(timeoutMs),
   });
   const data = await res.json().catch(() => ({}));
-  return { res, data, endpoint: 'native' };
+  return { res, data, endpoint: 'vertex-ai' };
 }
 
 /* ─── Gemini Response Parser (Language & Code Extraction) ─────────────────── */
@@ -1568,7 +1585,7 @@ app.get('/warmup', async (_req, res) => {
       contents: [{ parts: [{ text: 'ping' }] }],
       generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
     };
-    const result = await tryNativeEndpoint('gemini-3.5-flash-lite', cred.token, cred.isBearer, warmupBody, 4000);
+    const result = await tryNativeEndpoint(GEMINI_MODELS[0], cred.token, cred.isBearer, warmupBody, 4000);
     const durationMs = Date.now() - start;
     return res.json({ status: 'warm', durationMs, httpStatus: result.res.status, isTurso: isTursoActive });
   } catch (err) {
@@ -1679,7 +1696,6 @@ app.post('/api/extract', authenticate, async (req, res) => {
 
     let modelToken = currentCred.token;
     let modelIsBearer = currentCred.isBearer;
-    const modelStrategies = modelIsBearer ? ['native', 'openai-compat'] : ['native'];
 
     const elapsedBeforeModel = Date.now() - imageStartTime;
     if (elapsedBeforeModel >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
@@ -1690,23 +1706,12 @@ app.post('/api/extract', authenticate, async (req, res) => {
 
     const currentAttemptTimeoutMs = Math.min(PER_MODEL_TIMEOUT_MS, MAX_IMAGE_TOTAL_TIMEOUT_MS - elapsedBeforeModel);
 
-    for (const strategy of modelStrategies) {
-      const elapsedBeforeAttempt = Date.now() - imageStartTime;
-      if (elapsedBeforeAttempt >= MAX_IMAGE_TOTAL_TIMEOUT_MS) {
-        totalTimeoutExceeded = true;
-        break;
-      }
+    try {
+      console.log(`[CodeSnapper]   vertex-ai/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
+      const { res: gemRes, data, endpoint } = await tryNativeEndpoint(model, modelToken, modelIsBearer, nativeBody, currentAttemptTimeoutMs);
 
-      try {
-        console.log(`[CodeSnapper]   ${strategy}/${model} (timeout: ${currentAttemptTimeoutMs}ms, payload: ~${Math.round((imageData.length * 3 / 4) / 1024)} KB)…`);
-        const { res: gemRes, data, endpoint } = strategy === 'openai-compat'
-          ? await tryOpenAIEndpoint(model, modelToken, mimeType, imageData, currentAttemptTimeoutMs)
-          : await tryNativeEndpoint(model, modelToken, modelIsBearer, nativeBody, currentAttemptTimeoutMs);
-
-        if (gemRes.ok) {
-          const text = endpoint === 'openai-compat'
-            ? data?.choices?.[0]?.message?.content
-            : data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (gemRes.ok) {
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
 
           if (!text && data?.candidates?.[0]?.finishReason === 'SAFETY') {
             console.warn(`[CodeSnapper] ⚠ Image blocked by Gemini safety filter on ${endpoint}/${model}:`, JSON.stringify(data?.candidates?.[0]?.safetyRatings || []));
@@ -1782,12 +1787,11 @@ app.post('/api/extract', authenticate, async (req, res) => {
       } catch (networkErr) {
         const attemptDuration = Date.now() - imageStartTime;
         if (networkErr.name === 'AbortError' || networkErr.name === 'TimeoutError') {
-          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="${strategy}" after ${attemptDuration}ms. Failing over to next model immediately…`);
+          console.warn(`[CodeSnapper] ⏱ Timeout (${currentAttemptTimeoutMs}ms) on model="${model}" endpoint="vertex-ai" after ${attemptDuration}ms. Failing over to next model immediately…`);
         } else {
-          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="${strategy}":`, networkErr.message, networkErr.stack || '');
+          console.error(`[CodeSnapper] ✗ Network error on model="${model}" endpoint="vertex-ai":`, networkErr.message, networkErr.stack || '');
         }
       }
-    }
     if (hardAuthError || totalTimeoutExceeded) break;
   }
 
@@ -1847,19 +1851,15 @@ app.get('/api/test-gemini', async (_req, res) => {
   const start = Date.now();
   try {
     const cred = await getGeminiToken();
+    const endpointUrl = getVertexEndpointUrl(GEMINI_MODELS[0]);
     log.push(`Cred: mode=${cred.mode}, isBearer=${cred.isBearer}, format=${cred.format}, tokenPrefix=${cred.token.slice(0, 10)}...`);
+    log.push(`Endpoint: ${endpointUrl}`);
 
     const testBody = { contents: [{ parts: [{ text: 'Respond with OK' }] }] };
-    const r1 = await tryNativeEndpoint('gemini-3.5-flash-lite', cred.token, cred.isBearer, testBody, 4000);
-    log.push(`Attempt 1 (gemini-3.5-flash-lite, isBearer=${cred.isBearer}): status=${r1.res.status}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
+    const r1 = await tryNativeEndpoint(GEMINI_MODELS[0], cred.token, cred.isBearer, testBody, 6000);
+    log.push(`Attempt 1 (${GEMINI_MODELS[0]} via Vertex AI): status=${r1.res.status}, data=${JSON.stringify(r1.data).slice(0, 250)}`);
 
-    const envKey = (process.env.GEMINI_API_KEY || '').trim();
-    if (!r1.res.ok && envKey) {
-      const r2 = await tryNativeEndpoint('gemini-3.5-flash-lite', envKey, false, testBody, 4000);
-      log.push(`Attempt 2 (fallback to GEMINI_API_KEY=${envKey.slice(0, 10)}...): status=${r2.res.status}, data=${JSON.stringify(r2.data).slice(0, 250)}`);
-    }
-
-    res.json({ ok: true, durationMs: Date.now() - start, log });
+    res.json({ ok: r1.res.ok, status: r1.res.status, durationMs: Date.now() - start, log, data: r1.data });
   } catch (e) {
     res.json({ ok: false, durationMs: Date.now() - start, error: e.message, log });
   }
@@ -1900,14 +1900,13 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
     }
   }
 
-  // Priority 2: If only GEMINI_API_KEY exists → use it as a static key via ?key= query param
+  // Priority 2: If only GEMINI_API_KEY exists
   if (!_isServiceAccountActive && staticKey && staticKey !== 'your_gemini_api_key_here') {
     _cachedToken = staticKey;
     _tokenLoadedAt = Date.now();
     _isServiceAccountActive = false;
     const prefix = staticKey.slice(0, 10);
-    console.log(`[Auth] Priority 2: Using static key from GEMINI_API_KEY (${prefix}…) via ?key= query param`);
-    console.warn(`[Auth] ⚠ WARNING: Using static GEMINI_API_KEY. It may expire hourly if using an authorization token.`);
+    console.log(`[Auth] Priority 2: Using static key (${prefix}…)`);
   }
 
   console.log('─────────────────────────────────────────────────────────────');
@@ -1918,7 +1917,33 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
     console.log(`[Auth] Service Account:   ${_serviceAccountEmail}`);
     console.log(`[Auth] Auto-refresh:      ✓ ENABLED — token will refresh automatically every 45 minutes`);
   }
+  console.log(`[Vertex AI] Project:      ${process.env.VERTEX_PROJECT_ID || getVertexProjectId() || '(not set)'}`);
+  console.log(`[Vertex AI] Region:       ${process.env.VERTEX_REGION || 'us-central1'}`);
+  console.log(`[Vertex AI] Models:       ${GEMINI_MODELS.join(' → ')}`);
   console.log('─────────────────────────────────────────────────────────────');
+
+  // Startup test call to verify Vertex AI endpoint connectivity
+  if (_cachedToken) {
+    try {
+      const testModel = GEMINI_MODELS[0];
+      const testUrl = getVertexEndpointUrl(testModel);
+      console.log(`[Vertex AI] Performing startup connection test to ${testUrl}…`);
+      const testBody = {
+        contents: [{ parts: [{ text: 'ping' }] }],
+        generationConfig: { maxOutputTokens: 2, temperature: 0.1 },
+      };
+      const testRes = await tryNativeEndpoint(testModel, _cachedToken, true, testBody, 6000);
+      if (testRes.res.ok) {
+        _lastSuccessfulApiCall = new Date().toISOString();
+        _totalSuccessfulCalls++;
+        console.log(`[Vertex AI] ✓ Startup connection test SUCCESSFUL (HTTP ${testRes.res.status})`);
+      } else {
+        console.warn(`[Vertex AI] ⚠ Startup connection test returned HTTP ${testRes.res.status}:`, JSON.stringify(testRes.data?.error || testRes.data));
+      }
+    } catch (testErr) {
+      console.warn(`[Vertex AI] ⚠ Startup connection test skipped or failed:`, testErr.message);
+    }
+  }
 
   // Auto-refresh every 45 minutes for service accounts
   if (_isServiceAccountActive || rawCred) {

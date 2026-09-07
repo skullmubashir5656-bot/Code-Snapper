@@ -11,20 +11,20 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 ## Extraction Flow
 1. User uploads image → state: **LOADING**
 2. Client sends image to `POST /api/extract`
-3. Server tries `gemini-3.5-flash-lite` first (10s timeout)
-4. If fails → 500ms delay → try `gemini-3.5-flash` (10s timeout)
+3. Server tries `gemini-2.5-flash` first (10s timeout) via Vertex AI endpoint
+4. If fails → exponential backoff delay → try `gemini-2.5-flash-lite` (10s timeout)
 5. If both fail → return error to client
 6. Client receives result → state: **RESULT**
 7. On ANY failure after all retries: show friendly error, return to **UPLOAD** state
 - **RULE**: Never show "Retrying", "attempt X of Y", or any model names to users.
 - **RULE**: Error popup must NEVER auto-show on page refresh — only after a real failed extraction.
 
-## API Credentials
-- **Priority 1**: `GOOGLE_SERVICE_ACCOUNT_JSON` → service account authenticated via `google-auth-library`
-  - Auto-refreshes token every 45 minutes
-  - Used exclusively across all model attempts when present (never mixes or falls back to static key)
-- **Priority 2**: `GEMINI_API_KEY` → static key passed via `?key=` query param (only if no service account exists)
-- **Current working models**: `gemini-3.5-flash-lite` → `gemini-3.5-flash` (with 2s/4s exponential backoff between fallbacks)
+## API Credentials & Endpoint
+- **Backend Endpoint**: Vertex AI / Gemini Enterprise Agent Platform (`https://${REGION}-aiplatform.googleapis.com/v1/projects/${PROJECT_ID}/locations/${REGION}/publishers/google/models/${model}:generateContent`)
+- **Auth Header**: Bearer token only (`Authorization: Bearer ${token}`) — no `?key=` query parameters
+- **OAuth Scope**: `https://www.googleapis.com/auth/cloud-platform`
+- **Service Account**: `GOOGLE_SERVICE_ACCOUNT_JSON` authenticated via `google-auth-library` (auto-refreshed every 45 min)
+- **Models**: `gemini-2.5-flash` → `gemini-2.5-flash-lite`
 - **Timeouts**:
   - Per-model timeout: `10000ms` (10 seconds)
   - Server total maximum timeout: `22000ms` (22 seconds)
