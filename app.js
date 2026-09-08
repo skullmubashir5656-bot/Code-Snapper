@@ -2180,6 +2180,14 @@ class ManualCropper {
 ═══════════════════════════════════════════════ */
 const EXTRACTION_PROMPT = `You are CodeSnapper — a precision code extraction engine. Your ONLY task is to transcribe the source code visible in this image.
 
+CRITICAL RULES:
+- Extract ONLY the actual code content — never include line numbers, line number gutters, or row counters
+- Ignore any numbers appearing in the leftmost column of an IDE/editor screenshot — these are line numbers, not code
+- The extracted output must be valid, runnable source code only
+- Do not include file names, tab names, editor chrome, terminal prompts, or any UI elements
+- If a line appears to start with a number followed by code, strip the leading number — output only the code part
+- Preserve exact indentation of the actual code lines
+
 STRICT RULES — FOLLOW EXACTLY:
 1. Output ONLY the raw source code — absolutely nothing else before the code starts
 2. Do NOT wrap in markdown code fences (no \`\`\` blocks)
@@ -2263,6 +2271,19 @@ async function callGemini(dataURL) {
   };
 }
 
+function stripLineNumbers(code) {
+  if (!code || typeof code !== 'string') return '';
+  const lines = code.split('\n');
+  const cleaned = lines.map(line => {
+    // Remove leading line numbers: "122 " or "122\t" or "  122  " patterns
+    return line.replace(/^\s*\d+\s*\t?/, '');
+  });
+  // If result is mostly empty lines, the extraction failed — return original
+  const nonEmpty = cleaned.filter(l => l.trim().length > 0);
+  if (nonEmpty.length < 3) return code; // fallback to original
+  return cleaned.join('\n');
+}
+
 /* ═══════════════════════════════════════════════
    RESPONSE PARSING
 ═══════════════════════════════════════════════ */
@@ -2314,6 +2335,7 @@ function parseResponse(raw) {
 
   // Strip trailing blank lines after code
   code = code.replace(/\n+$/, '');
+  code = stripLineNumbers(code);
 
   return { code, language: language || 'Code', ambiguities, noCode: !code.trim() };
 }
