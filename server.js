@@ -50,11 +50,11 @@ const WINDOW_MS   = 24 * 60 * 60 * 1000;  // 24-hour rolling window
 /* ─── OpenRouter config ──────────────────────────────────────────────────── */
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1/chat/completions';
 
-// Free vision-capable models on OpenRouter:
-const GEMINI_MODELS = [
-  'google/gemini-2.5-flash-lite',  // free, fast
-  'google/gemini-2.5-flash',       // free fallback
-  'meta-llama/llama-3.2-11b-vision-instruct:free', // backup free model
+// Vision-capable models on OpenRouter (Google models):
+let GEMINI_MODELS = [
+  'google/gemini-2.5-flash-lite',
+  'google/gemini-2.5-flash',
+  'google/gemini-2.0-flash-lite',  // older but stable backup
 ];
 
 const PER_MODEL_TIMEOUT_MS       = 10000; // 10 seconds max per model attempt (generous for dense vision images)
@@ -1354,6 +1354,81 @@ const tryNativeEndpoint = async (model, _token, _isBearer, body, timeoutMs) => {
   return { res, ok: res.ok, text, status: res.status, data, endpoint: 'openrouter' };
 };
 
+/* ─── Model Health Check (Every 7 Days) ──────────────────────────────────── */
+const HEALTH_CHECK_FILE = path.join(__dirname, '.model-health.json');
+const HEALTH_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+async function runModelHealthCheck(force = false) {
+  let lastCheck = 0;
+  try {
+    if (fs.existsSync(HEALTH_CHECK_FILE)) {
+      const data = JSON.parse(fs.readFileSync(HEALTH_CHECK_FILE, 'utf8'));
+      lastCheck = data.lastCheck || 0;
+    }
+  } catch {}
+
+  const now = Date.now();
+  if (!force && (now - lastCheck < HEALTH_CHECK_INTERVAL_MS)) {
+    const daysSince = ((now - lastCheck) / (24 * 3600 * 1000)).toFixed(1);
+    const daysUntil = ((HEALTH_CHECK_INTERVAL_MS - (now - lastCheck)) / (24 * 3600 * 1000)).toFixed(1);
+    console.log(`[ModelHealth] Last weekly health check was ${daysSince} days ago (next in ${daysUntil} days).`);
+    return;
+  }
+
+  console.log('\n[ModelHealth] 🔍 Running weekly automated model health check across all models…');
+  const sample1x1Png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  const healthResults = [];
+  for (const model of [...GEMINI_MODELS]) {
+    try {
+      const res = await tryOpenRouterExtraction(model, sample1x1Png, 'image/png', 8000);
+      const isDeprecated = res.status === 404 ||
+        (res.status >= 400 && /deprecated|not found|decommissioned|unknown model/i.test(JSON.stringify(res.data || '')));
+
+      if (res.ok) {
+        console.log(`[ModelHealth] ✓ ${model} responded successfully (HTTP ${res.status})`);
+        healthResults.push({ model, ok: true, status: res.status });
+      } else if (isDeprecated) {
+        console.warn(`[ModelHealth] ❌ ${model} returned HTTP ${res.status} (deprecated/unavailable):`, JSON.stringify(res.data?.error || res.data));
+        healthResults.push({ model, ok: false, status: res.status, deprecated: true });
+      } else {
+        console.warn(`[ModelHealth] ⚠ ${model} returned HTTP ${res.status}:`, JSON.stringify(res.data?.error || res.data));
+        healthResults.push({ model, ok: false, status: res.status, deprecated: false });
+      }
+    } catch (err) {
+      console.warn(`[ModelHealth] ⚠ ${model} check failed:`, err.message);
+      healthResults.push({ model, ok: false, error: err.message });
+    }
+  }
+
+  // If the primary model fails the health check, automatically promote the next working model
+  const primaryResult = healthResults.find(r => r.model === GEMINI_MODELS[0]);
+  if (primaryResult && !primaryResult.ok) {
+    const workingCandidate = healthResults.find(r => r.ok);
+    if (workingCandidate && workingCandidate.model !== GEMINI_MODELS[0]) {
+      const oldPrimary = GEMINI_MODELS[0];
+      const newPrimary = workingCandidate.model;
+      const workingIndex = GEMINI_MODELS.indexOf(newPrimary);
+      if (workingIndex > 0) {
+        GEMINI_MODELS.splice(workingIndex, 1);
+        GEMINI_MODELS.unshift(newPrimary);
+        const formatName = (m) => m.split('/').pop();
+        console.warn(`[ModelHealth] Primary model ${formatName(oldPrimary)} is deprecated — promoting ${formatName(newPrimary)} to primary`);
+      }
+    }
+  }
+
+  try {
+    fs.writeFileSync(HEALTH_CHECK_FILE, JSON.stringify({
+      lastCheck: now,
+      results: healthResults,
+      activeChain: GEMINI_MODELS
+    }, null, 2), 'utf8');
+  } catch (saveErr) {
+    console.warn('[ModelHealth] Could not save health check record:', saveErr.message);
+  }
+}
+
 /* ─── Post-processing helper to strip line numbers ───────────────────────── */
 function stripLineNumbers(code) {
   if (!code || typeof code !== 'string') return '';
@@ -1688,22 +1763,17 @@ app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
   console.log(`[Provider] Models:        ${GEMINI_MODELS.join(' → ')}`);
   console.log('─────────────────────────────────────────────────────────────');
 
-  // Startup test call to verify OpenRouter endpoint connectivity
+  // Run weekly model health check on startup (checks if 7 days elapsed or first run)
   try {
-    const testModel = GEMINI_MODELS[0];
-    console.log(`[OpenRouter] Performing startup connection test to openrouter.ai (${testModel})…`);
-    const sample1x1Png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-    const testRes = await tryOpenRouterExtraction(testModel, sample1x1Png, 'image/png', 8000);
-    if (testRes.ok) {
-      _lastSuccessfulApiCall = new Date().toISOString();
-      _totalSuccessfulCalls++;
-      console.log(`[OpenRouter] ✓ Startup connection test SUCCESSFUL (HTTP ${testRes.status})`);
-    } else {
-      console.warn(`[OpenRouter] ⚠ Startup connection test returned HTTP ${testRes.status}:`, JSON.stringify(testRes.data?.error || testRes.data));
-    }
-  } catch (testErr) {
-    console.warn(`[OpenRouter] ⚠ Startup connection test skipped or failed:`, testErr.message);
+    await runModelHealthCheck();
+  } catch (healthErr) {
+    console.warn(`[ModelHealth] ⚠ Weekly health check encountered an error:`, healthErr.message);
   }
+
+  // Schedule recurring 7-day automated health check
+  setInterval(() => {
+    runModelHealthCheck().catch(e => console.warn('[ModelHealth] ⚠ Scheduled health check error:', e.message));
+  }, HEALTH_CHECK_INTERVAL_MS);
 
   app.listen(PORT, () => {
     console.log(`  URL:      http://localhost:${PORT}`);

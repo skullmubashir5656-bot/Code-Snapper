@@ -13,7 +13,7 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 2. Client sends image to `POST /api/extract`
 3. Server tries `google/gemini-2.5-flash-lite` first (10s timeout) via OpenRouter API
 4. If fails → exponential backoff delay → try `google/gemini-2.5-flash` (10s timeout)
-5. If fails → try backup `meta-llama/llama-3.2-11b-vision-instruct:free`
+5. If fails → try backup `google/gemini-2.0-flash-lite` (10s timeout)
 6. If all fail → return error to client
 7. Client receives result → state: **RESULT**
 8. On ANY failure after all retries: show friendly error, return to **UPLOAD** state
@@ -21,7 +21,7 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 - **RULE**: Error popup must NEVER auto-show on page refresh — only after a real failed extraction.
 
 ## API Credentials & Endpoint
-- Extraction uses OpenRouter API (openrouter.ai) with permanent sk-or- key. Models: google/gemini-2.5-flash-lite → google/gemini-2.5-flash → llama-3.2-vision:free. Key never expires.
+- Extraction uses OpenRouter API (openrouter.ai) with permanent sk-or- key. Models: `google/gemini-2.5-flash-lite` → `google/gemini-2.5-flash` → `google/gemini-2.0-flash-lite`. Key never expires.
 - **Backend Endpoint**: `https://openrouter.ai/api/v1/chat/completions`
 - **Auth Method**: Bearer token via `Authorization: Bearer ${process.env.OPENROUTER_API_KEY}`
 - **Database Auth**: `GOOGLE_SERVICE_ACCOUNT_JSON` is reserved for Turso database / backend storage auth only.
@@ -112,9 +112,24 @@ State transitions use triple-layer hide (`class="hidden"`, attribute `hidden="tr
 - **ALL** technical details (HTTP status codes, model failure types, stack traces) go to server console logs only.
 - **Friendly error messages only**: `"Extraction failed — please try again"` with a single `"Try Again"` action button.
 
+## Model Health Check
+- Automated health check runs on startup (if >= 7 days elapsed or first run) and every 7 days via recurring interval.
+- Sends a test payload to all models in the fallback chain (`GEMINI_MODELS`).
+- If the primary model fails or returns 404/deprecated, the next working model in the chain is automatically promoted to index 0.
+- State is persisted to `.model-health.json`.
+
+## Debugging Protocol (/debugger)
+- Trigger command: `/debugger`
+- Always read `brain.md` at the start of any debugging session.
+- Diagnose root cause by reading real files; present the diagnosed error clearly to the user.
+- Await the user's fix direction (ask for permission max 3 times per session).
+- **2-Failure Circuit Breaker**: If a fix fails twice for the same issue, stop iterating on variations of the same approach. Question the premise, restart diagnosis from scratch with fresh assumptions, and present the new findings to the user.
+- Test fixes autonomously with automated checks before reporting back.
+
 ## What Must Never Change Without Updating This File
 - State machine transition logic (`showPanel`)
-- Model fallback chain order (`google/gemini-2.5-flash-lite` → `google/gemini-2.5-flash` → `meta-llama/llama-3.2-11b-vision-instruct:free`)
+- Model fallback chain order (`google/gemini-2.5-flash-lite` → `google/gemini-2.5-flash` → `google/gemini-2.0-flash-lite`)
 - Timeout values (`10s` per model, `22s` server max, `30s` client fetch)
 - Error message wording (clean, non-technical, single "Try Again" CTA)
 - Database table structure and case-insensitive email matching
+
