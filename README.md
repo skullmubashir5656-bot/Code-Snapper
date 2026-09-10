@@ -42,36 +42,47 @@ No more manually retyping code from tutorials, textbooks, whiteboards, or someon
 
 ## Features
 
-### 📥 Input methods
-- 📸 **Upload** — file picker, single or multiple images (PNG, JPG, WEBP, GIF)
+### 📥 Input Methods & Camera Lens
+- 📸 **Upload** — file picker supporting single or multiple images (PNG, JPG, WEBP, GIF)
 - 📋 **Paste** — `Ctrl+V` / `Cmd+V` directly from clipboard
-- 🖱️ **Drag & drop** — drop images anywhere on the upload zone
-- 📷 **Camera Lens** — point your phone's camera at any code screen, whiteboard, or book. Capture up to 5 photos per session (10 when signed in) with review, blur detection, thumbnail strip, and batch extraction.
+- 🖱️ **Drag & drop** — drop image files anywhere onto the upload zone
+- 📷 **Camera Lens & Blur Detection** — point your device camera at any whiteboard, monitor, or textbook. Snap up to 5 photos per session (10 for signed-in users) with a live thumbnail strip, photo deletion, and client-side **blur detection** that inspects image sharpness before sending to the API.
 
-### ✂️ Crop modes
-- **Auto Crop** — AI detects the code block boundary automatically with zero clicks
-- **Manual Crop** — drag-to-select crop tool, fully touch-friendly on mobile
+### ✂️ Precision Crop Modes
+- **Auto Crop (zero clicks)** — detects code boundaries automatically and extracts instantly without manual adjustments
+- **Manual Crop (drag-to-select)** — simple, intuitive drag-to-select crop tool with no zoom/pan clutter, fully responsive on mobile and desktop
 
 ### 🤖 Vision Extraction Engine
-- **Vision AI Engine** — preserves exact indentation, whitespace, line breaks, and all special characters
-- **Automated Line Number Stripping** — strips editor gutters (`122 const x = 1;` $\rightarrow$ `const x = 1;`) and rejects number-only noise
+- **Multi-Model Vision AI** — preserves exact indentation, whitespace, line breaks, and all special programming characters
+- **Automated Line Number Stripping** — strips editor gutters (`122 const x = 1;` $\rightarrow$ `const x = 1;`) and filters out numeric-only line noise
 - **Syntax Highlighting** — auto-detects Python, JavaScript, TypeScript, HTML, CSS, Java, C++, C#, SQL, Go, Rust, and more
-- **One-click Copy** — copies raw code only, with per-tab and "Copy All" options
-- **Confidence Flagging** — highlights ambiguous characters if visual clarity was low
+- **One-click Copy & Copy All** — copies clean source code with per-tab and unified "Copy All" clipboard actions
+- **Confidence Flagging** — highlights ambiguous characters if image resolution was degraded
 
 ### 🗂️ Batch Processing
-- Process up to 5 images at once (anonymous) or 10 images (signed in)
-- Sequential processing with real-time status updates
-- Tabbed results interface with individual and unified clipboard actions
+- Process up to 5 images per batch (anonymous) or 10 images (signed in)
+- Sequential processing with live progress status per image
+- Tabbed results interface with individual Copy buttons and a **Copy All** button
 
-### 🔐 Auth & Rate Limits
-- 25 free lifetime extractions for anonymous users (tracked server-side by IP)
-- 50 extractions per rolling 24-hour window for signed-in users
-- Secure JWT authentication with bcrypt password hashing (12 rounds)
+### 📜 Extraction History (Signed-in Only)
+- Automatically saves **once per extraction** upon confirmed success
+- **Auto-Named**: formatted as `[Language] · [Date] [Time in user's local timezone]`
+- Full inline **Rename**, **Load into editor**, and **Delete** actions
+- **Capacity**: Stores up to 100 entries per user with 90-day automatic deletion
+- **100% Text-Only**: Stores extracted code text only — zero images stored on disk
+
+### 🔐 Authentication & Rate Limits
+- **Anonymous**: 25 total lifetime extractions tracked server-side by IP address
+- **Signed-in**: 50 extractions per rolling 24-hour window
+- Secure JWT session handling (30-day token lifetime) with 12-round bcrypt password hashing
+
+### 💬 In-App Feedback & Ratings
+- **Report an Issue Modal**: accessible from the footer and results view; submissions are stored directly in the `feedback` database table and viewable by admins at `/admin/feedback`
+- **Rate Us Prompt**: triggers a 5-star rating prompt after the user's 30th successful extraction (one-time only)
 
 ### 📊 Model Health Monitoring
-- Weekly automated health checks across the model chain
-- Automatically detects deprecated model endpoints (HTTP 404) and promotes the next responsive fallback model to primary
+- Weekly automated health checks across the vision model chain
+- Automatically detects deprecated endpoints (HTTP 404) and promotes the next healthy model to primary position
 
 ---
 
@@ -187,9 +198,9 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 View submitted user feedback, bug reports, and ratings at:
 ```
-http://localhost:3000/admin.html
+http://localhost:3000/admin/feedback
 ```
-*(Protected by `ADMIN_PASSWORD`)*
+*(Also accessible at `http://localhost:3000/admin.html`, protected by `ADMIN_PASSWORD`)*
 
 ---
 
