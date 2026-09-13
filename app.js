@@ -411,6 +411,13 @@ async function fetchAnonStatus() {
 
       state.anonRemaining = remaining;
       state.anonCount = (data.count !== undefined) ? Number(data.count) : (data.used !== undefined ? Number(data.used) : (25 - remaining));
+
+      // If server says user has remaining extractions, clear any stale localStorage count
+      if (remaining > 0) {
+        localStorage.removeItem(STORAGE_KEY_CNT);
+        localStorage.setItem(STORAGE_KEY_CNT, String(state.anonCount));
+      }
+
       updateUsageUI();
       return data;
     }
@@ -926,8 +933,12 @@ function getCount()  { return parseInt(localStorage.getItem(STORAGE_KEY_CNT) || 
 function incCount()  { localStorage.setItem(STORAGE_KEY_CNT, String(getCount() + 1)); }
 function isLimited() {
   if (state.authToken) return false; // signed-in: server decides
-  const n = (state.anonCount !== null && state.anonCount !== undefined) ? state.anonCount : getCount();
-  return n >= MAX_ANON_EXTRACTIONS;
+  // Never use localStorage count — always use fresh server-side state
+  if (state.anonCount !== null && state.anonCount !== undefined) {
+    return Number(state.anonCount) >= MAX_ANON_EXTRACTIONS;
+  }
+  // If server state not loaded yet, assume NOT limited — let server decide
+  return false;
 }
 
 let countdownInterval = null;
@@ -1009,7 +1020,7 @@ function updateUsageUI() {
       countdownInterval = null;
     }
     const limit = MAX_ANON_EXTRACTIONS || 25;
-    const n = (state.anonCount !== null && state.anonCount !== undefined) ? state.anonCount : getCount();
+    const n = (state.anonCount !== null && state.anonCount !== undefined) ? Number(state.anonCount) : 0;
     const isAnonLimitReached = n >= limit;
     console.log('[UsageUI] count:', n, 'limit:', limit, 'remaining:', limit - n);
 
