@@ -1011,6 +1011,7 @@ function updateUsageUI() {
     const limit = MAX_ANON_EXTRACTIONS || 25;
     const n = (state.anonCount !== null && state.anonCount !== undefined) ? state.anonCount : getCount();
     const isAnonLimitReached = n >= limit;
+    console.log('[UsageUI] count:', n, 'limit:', limit, 'remaining:', limit - n);
 
     const heroCallout = document.getElementById('hero-auth-callout') || (els ? els.heroAuthCallout : null);
     const heroText = document.getElementById('hero-auth-text');
