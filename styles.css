@@ -710,20 +710,18 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   color: var(--txt);
 }
 .hero-soft-link {
-  color: var(--violet-d);
-  font-weight: 600;
+  color: #a78bfa;
   text-decoration: underline;
-  text-underline-offset: 3px;
-  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 400;
   background: none;
   border: none;
-  font-family: inherit;
-  font-size: 13.5px;
-  padding: 0 4px;
-  transition: color 0.15s ease;
+  padding: 0;
+  cursor: pointer;
+  display: inline;
 }
 .hero-soft-link:hover {
-  color: #a78bfa;
+  color: #c084fc;
 }
 .hero-auth-btn {
   display: inline-flex;
