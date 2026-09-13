@@ -704,6 +704,27 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   border-color: rgba(124, 58, 237, 0.5);
   background: rgba(124, 58, 237, 0.12);
 }
+.hero-auth-callout.limit-reached {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--txt);
+}
+.hero-soft-link {
+  color: var(--violet-d);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 0 4px;
+  transition: color 0.15s ease;
+}
+.hero-soft-link:hover {
+  color: #a78bfa;
+}
 .hero-auth-btn {
   display: inline-flex;
   align-items: center;

@@ -1012,15 +1012,48 @@ function updateUsageUI() {
     const n = (state.anonCount !== null && state.anonCount !== undefined) ? state.anonCount : getCount();
     const isAnonLimitReached = n >= limit;
 
+    const heroCallout = document.getElementById('hero-auth-callout') || (els ? els.heroAuthCallout : null);
+    const heroText = document.getElementById('hero-auth-text');
+    const heroSoftLink = document.getElementById('hero-soft-signin-link');
+    const heroSigninBtn = document.getElementById('hero-signin-btn') || (els ? els.heroSigninBtn : null);
+
     if (isAnonLimitReached) {
       if (usageTextEl) {
         usageTextEl.innerHTML = `You've used all 25 free extractions — <button type="button" class="btn btn-primary btn-xs" onclick="openAuthModal({fromLimit:true})" style="font-size:12px;padding:2px 10px;margin-left:6px;display:inline-flex;vertical-align:middle">Sign in for 50/day + code history</button>`;
+      }
+      if (heroCallout) {
+        heroCallout.classList.add('limit-reached');
+      }
+      if (heroText) {
+        heroText.textContent = "You've used all 25 free extractions — sign in to continue";
+      }
+      if (heroSoftLink) {
+        heroSoftLink.classList.add('hidden');
+        heroSoftLink.style.display = 'none';
+      }
+      if (heroSigninBtn) {
+        heroSigninBtn.classList.remove('hidden');
+        heroSigninBtn.style.display = 'inline-flex';
       }
     } else {
       if (usageTextEl) {
         usageTextEl.innerHTML = `<span class="count" id="usage-count">${n}</span> / ${limit} free extractions · No account needed`;
       } else if (usageCountEl) {
         usageCountEl.textContent = n;
+      }
+      if (heroCallout) {
+        heroCallout.classList.remove('limit-reached');
+      }
+      if (heroText) {
+        heroText.textContent = '50 extractions/day · 10 camera captures · Code history · Secure & private';
+      }
+      if (heroSoftLink) {
+        heroSoftLink.classList.remove('hidden');
+        heroSoftLink.style.display = 'inline';
+      }
+      if (heroSigninBtn) {
+        heroSigninBtn.classList.add('hidden');
+        heroSigninBtn.style.display = 'none';
       }
     }
 
@@ -4063,6 +4096,13 @@ function bindEvents() {
   els.navSigninBtn.addEventListener('click', () => openAuthModal({ tab: 'signin' }));
   if (els.heroSigninBtn) {
     els.heroSigninBtn.addEventListener('click', () => openAuthModal({ tab: 'signin' }));
+  }
+  const heroSoftLink = document.getElementById('hero-soft-signin-link');
+  if (heroSoftLink) {
+    heroSoftLink.addEventListener('click', e => {
+      e.preventDefault();
+      openAuthModal({ tab: 'signin' });
+    });
   }
   els.signoutBtn.addEventListener('click', () => {
     clearAuth();
