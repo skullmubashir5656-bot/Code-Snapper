@@ -201,37 +201,189 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   box-shadow: var(--sh-inset);
 }
 
+/* ============================================================
+   HEADER & NAVBAR
+   ============================================================ */
+.header {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: 60px; min-height: 60px;
+  background: rgba(7, 9, 15, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-2);
+  z-index: 200;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
 .header-inner {
-  display: flex; align-items: center; gap: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   height: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-shrink: 0;
 }
 
 .logo {
-  display: flex; align-items: center; gap: 10px;
-  text-decoration: none; color: var(--txt); flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--txt);
+  flex-shrink: 0;
 }
 
-/* logo-img styles defined below in LOGO VISIBILITY section */
-
 .logo-wordmark {
-  font-size: 17px; font-weight: 800; letter-spacing: -.5px;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -.5px;
   background: var(--g-brand);
-  -webkit-background-clip: text; background-clip: text;
+  -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
-.nav { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.nav-links-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 
 .nav-link {
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-radius: var(--r-md);
-  color: var(--txt-2); text-decoration: none;
-  font-size: 14px; font-weight: 500;
+  color: var(--txt-2);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
   transition: all var(--t-base);
   white-space: nowrap;
 }
 .nav-link:hover { color: var(--txt); background: var(--card-2); }
 .nav-link.active { color: var(--violet-d); font-weight: 600; }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.header-auth-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-history-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--r-md);
+  background: var(--card-2);
+  border: 1px solid var(--border-2);
+  color: var(--txt-2);
+  cursor: pointer;
+  transition: all var(--t-base);
+  flex-shrink: 0;
+}
+.nav-history-icon-btn:hover {
+  background: var(--card);
+  color: var(--txt);
+  border-color: rgba(167, 139, 250, 0.4);
+  box-shadow: 0 0 12px rgba(124, 58, 237, 0.2);
+}
+.nav-history-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.user-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--card-2);
+  border: 1px solid var(--border-2);
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--txt);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.user-pill-email {
+  color: var(--txt);
+  font-weight: 600;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-pill-sep {
+  color: var(--txt-3);
+  font-weight: 700;
+}
+.user-pill-remaining {
+  color: var(--violet-d);
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.nav-signout-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  color: var(--txt-3);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: all var(--t-base);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.nav-signout-link:hover {
+  color: #ef4444;
+}
+.nav-signout-link svg {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--t-fast);
+}
+.nav-signout-link:hover svg {
+  transform: translateX(2px);
+}
+
+.mobile-counter-pill {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  background: rgba(124, 58, 237, 0.15);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 9999px;
+  color: var(--violet-d);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 .nav-cta {
   margin-left: 8px;
@@ -266,7 +418,6 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .menu-toggle svg { width: 20px; height: 20px; }
 .menu-toggle.open svg { color: var(--txt); }
 .menu-toggle.open { color: var(--txt); }
-.menu-toggle.open svg { color: var(--txt); }
 
 /* ============================================================
    HERO
@@ -2370,14 +2521,18 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   /* Header & Navigation Drawer */
   .header {
     height: 60px;
+    min-height: 60px;
     z-index: 200;
   }
   .header-inner {
     padding: 0 16px;
     justify-content: space-between;
   }
-  .nav-link, .nav-cta, .nav-signin-btn, .nav-key-btn {
+  .nav-links-left, .header-auth-group, .nav-link, .nav-cta, .nav-signin-btn, .nav-key-btn {
     display: none !important;
+  }
+  .mobile-counter-pill:not(.hidden) {
+    display: inline-flex !important;
   }
   .menu-toggle {
     display: flex !important;
@@ -2402,6 +2557,50 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     display: flex;
     align-items: center;
     font-size: 16px;
+  }
+  .mobile-auth-user-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--card-2);
+    border-radius: var(--r-md);
+    border: 1px solid var(--border-2);
+    margin-bottom: 8px;
+  }
+  .mobile-auth-email {
+    font-size: 14px;
+    color: var(--txt);
+    font-weight: 600;
+  }
+  .mobile-auth-rem {
+    font-size: 12px;
+    color: var(--violet-d);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    background: rgba(124, 58, 237, 0.15);
+    padding: 2px 8px;
+    border-radius: 9999px;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+  }
+  .mobile-signout-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 12px 14px;
+    background: none;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: var(--r-md);
+    color: #ef4444;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--t-base);
+  }
+  .mobile-signout-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
   }
 
   /* Hero Section — clearance for fixed 60px navbar */

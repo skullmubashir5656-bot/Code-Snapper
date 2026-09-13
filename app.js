@@ -732,8 +732,19 @@ window.deleteHistoryItem = async function(id, cardEl) {
 /* Update the header user pill */
 function updateUserPill() {
   const signedIn = !!state.authToken;
-  els.navSigninBtn.classList.toggle('hidden', signedIn); // Always visible when signed out!
-  els.userPill.classList.toggle('hidden', !signedIn);
+  const headerAuthGroup = document.getElementById('header-auth-group');
+  const mobileCounterPill = document.getElementById('mobile-counter-pill');
+  const mobileCounterText = document.getElementById('mobile-counter-text');
+
+  if (els.navSigninBtn) {
+    els.navSigninBtn.classList.toggle('hidden', signedIn);
+  }
+  if (headerAuthGroup) {
+    headerAuthGroup.classList.toggle('hidden', !signedIn);
+  }
+  if (els.userPill) {
+    els.userPill.classList.toggle('hidden', !signedIn);
+  }
   if (els.heroAuthCallout) {
     els.heroAuthCallout.classList.toggle('hidden', signedIn);
   }
@@ -749,19 +760,38 @@ function updateUserPill() {
     else els.mobileNavHistory.setAttribute('hidden', 'true');
     els.mobileNavHistory.style.display = signedIn ? 'flex' : 'none';
   }
+  if (mobileCounterPill) {
+    mobileCounterPill.classList.toggle('hidden', !signedIn);
+  }
+
   if (signedIn) {
-    // Truncate email for small screens
+    // Truncate username: max 8 characters then '...'
     const email = state.authEmail || '';
-    els.userPillEmail.textContent = email.length > 20 ? email.slice(0, 18) + '…' : email;
-    const rem = state.authRemaining;
-    els.userPillRemaining.textContent = rem !== null
-      ? `${rem}/50 left today`
-      : '50/day';
-    els.userPillRemaining.style.color = (rem !== null && rem <= 5) ? 'var(--warning)' : 'var(--txt-2)';
+    const username = email.split('@')[0] || email;
+    const truncated = username.length > 8 ? username.slice(0, 8) + '...' : username;
+
+    if (els.userPillEmail) {
+      els.userPillEmail.textContent = truncated;
+      els.userPillEmail.title = email;
+    }
+
+    const rem = (state.authRemaining !== null && state.authRemaining !== undefined) ? state.authRemaining : 50;
+    const remStr = `${rem}/50`;
+
+    if (els.userPillRemaining) {
+      els.userPillRemaining.textContent = remStr;
+      els.userPillRemaining.style.color = rem <= 5 ? '#ef4444' : 'var(--violet-d)';
+    }
+
+    if (mobileCounterText) {
+      mobileCounterText.textContent = remStr;
+    }
+
     fetchHistory();
   } else {
     closeHistoryDrawer();
   }
+
   // Keep mobile drawer auth section and usage counter in sync
   updateMobileNavAuth();
   updateUsageUI();
@@ -3792,23 +3822,27 @@ function bindEvents() {
   updateMobileNavAuth = function() {
     if (!mobileNavAuth) return;
     if (state.authToken) {
+      const email = state.authEmail || '';
+      const username = email.split('@')[0] || email;
+      const truncated = username.length > 8 ? username.slice(0, 8) + '...' : username;
+      const rem = (state.authRemaining !== null && state.authRemaining !== undefined) ? state.authRemaining : 50;
       mobileNavAuth.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:var(--card-2);border-radius:var(--r-md)">
-          <span style="font-size:13px;color:var(--txt-2);font-weight:500">${state.authEmail || ''}</span>
-          <span style="font-size:12px;color:var(--txt-3);font-weight:500">${state.authRemaining !== null ? state.authRemaining + ' left' : '50/day'}</span>
+        <div class="mobile-auth-user-row" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--card-2);border-radius:var(--r-md);margin-bottom:6px">
+          <span style="font-size:13px;color:var(--txt);font-weight:500" title="${escapeHtml(email)}">${escapeHtml(truncated)}</span>
+          <span style="font-size:12px;color:var(--violet-d);font-weight:600;background:rgba(124,58,237,0.15);padding:2px 8px;border-radius:12px">${rem}/50</span>
         </div>
-        <button class="btn btn-ghost" onclick="document.getElementById('signout-btn').click()" style="font-size:14px">
+        <button class="btn btn-ghost mobile-signout-btn" onclick="document.getElementById('signout-btn').click(); if (document.getElementById('mobile-nav')) document.getElementById('mobile-nav').classList.add('hidden');" style="font-size:14px;width:100%;justify-content:center">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           Sign out
         </button>`;
     } else {
       mobileNavAuth.innerHTML = `
-        <button class="btn btn-primary" onclick="document.getElementById('nav-signin-btn').click()" style="font-size:14px">
+        <button class="btn btn-primary" onclick="document.getElementById('nav-signin-btn').click(); if (document.getElementById('mobile-nav')) document.getElementById('mobile-nav').classList.add('hidden');" style="font-size:14px;width:100%;justify-content:center">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
           Sign in / Create account
         </button>`;
     }
-  }
+  };
 
   if (menuBtn && mobileNav) {
     menuBtn.addEventListener('click', () => {
