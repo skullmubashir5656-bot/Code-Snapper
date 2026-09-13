@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 — Page Not Found | CodeSnapper</title>
+  <meta name="description" content="The page you are looking for does not exist on CodeSnapper.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#7c3aed">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="apple-touch-icon" href="/logo.png">
+
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .not-found-wrapper {
+      min-height: calc(100vh - 140px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 24px;
+      position: relative;
+      z-index: 1;
+    }
+    .not-found-card {
+      background: var(--card);
+      border: 1px solid var(--border-2);
+      border-radius: var(--r-xl);
+      padding: 48px 36px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+    }
+    .not-found-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: rgba(124, 58, 237, 0.14);
+      border: 1px solid rgba(124, 58, 237, 0.35);
+      border-radius: 999px;
+      color: var(--violet-d);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 20px;
+    }
+    .not-found-code {
+      font-family: var(--font-mono, monospace);
+      font-size: 64px;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #a78bfa, #c084fc, #e879f9);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .not-found-title {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--txt);
+    }
+    .not-found-desc {
+      font-size: 14.5px;
+      color: var(--txt-2);
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header class="header" role="banner">
+  <div class="container header-inner">
+    <a href="/index.html" class="logo" aria-label="CodeSnapper Home">
+      <div class="logo-img">
+        <img src="/logo.png" alt="CodeSnapper Logo">
+      </div>
+      <span class="logo-wordmark">CodeSnapper</span>
+    </a>
+    <nav class="nav" role="navigation" aria-label="Main navigation">
+      <a href="/index.html" class="nav-link">Extract</a>
+      <a href="/about.html" class="nav-link">About</a>
+    </nav>
+  </div>
+</header>
+
+<main class="not-found-wrapper">
+  <div class="not-found-card">
+    <div class="not-found-badge">
+      <span>🔍 404 Error</span>
+    </div>
+    <div class="not-found-code">404</div>
+    <h1 class="not-found-title">Page Not Found</h1>
+    <p class="not-found-desc">
+      The page you are looking for doesn’t exist, has been removed, or was moved to another location.
+    </p>
+    <a href="/index.html" class="btn btn-primary btn-lg" style="justify-content:center;width:100%">
+      Go to CodeSnapper
+    </a>
+  </div>
+</main>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-copy">© 2026 CodeSnapper · Extract code from screenshots with AI</div>
+    <div class="footer-links">
+      <a href="/about.html" class="footer-link">About</a>
+      <a href="/terms.html" class="footer-link">Terms</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

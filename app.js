@@ -4497,6 +4497,9 @@ function init() {
   // Sync any queued offline feedback reports
   syncOfflineFeedbackQueue();
 
+  // Initialize Cookie Consent banner
+  initCookieConsent();
+
   // Clear any report hash from URL on refresh so modal never auto-opens
   if (window.location.hash === '#report-issue' || window.location.hash === '#report') {
     history.replaceState(null, '', window.location.pathname + window.location.search);
@@ -4507,6 +4510,21 @@ function init() {
   closeModal(els.feedbackModal);
 
   console.log('%c CodeSnapper loaded ❖', 'color:#a78bfa;font-weight:bold;font-size:16px');
+}
+
+function initCookieConsent() {
+  const banner = document.getElementById('cookie-banner');
+  const acceptBtn = document.getElementById('cookie-accept-btn');
+  if (!banner) return;
+  if (!localStorage.getItem('codesnapper_cookie_consent')) {
+    banner.classList.remove('hidden');
+  }
+  if (acceptBtn) {
+    acceptBtn.addEventListener('click', () => {
+      localStorage.setItem('codesnapper_cookie_consent', 'accepted');
+      banner.classList.add('hidden');
+    });
+  }
 }
 
 /* ═══════════════════════════════════════════════

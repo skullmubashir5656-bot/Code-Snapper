@@ -3,10 +3,22 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>About CodeSnapper — How It Works & Privacy</title>
+  <title>About CodeSnapper — How It Works</title>
   <meta name="description" content="Learn how CodeSnapper extracts code from screenshots using AI vision. Understand our privacy practices, accuracy limitations, and workflow.">
-  <meta property="og:title" content="About CodeSnapper">
-  <meta property="og:description" content="How CodeSnapper works — AI-powered code extraction, privacy policy, and accuracy guidelines.">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="apple-touch-icon" href="/logo.png">
+
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+
   <meta name="theme-color" content="#7c3aed">
   <meta name="color-scheme" content="dark">
 
@@ -321,6 +333,33 @@
     </nav>
   </div>
 </footer>
+
+<!-- Cookie Consent Banner -->
+<div id="cookie-banner" class="cookie-banner hidden" role="dialog" aria-label="Cookie consent">
+  <p class="cookie-text">
+    We use cookies for authentication and usage tracking. By continuing, you agree to our <a href="/terms.html">Privacy Policy</a>.
+  </p>
+  <div class="cookie-actions">
+    <button type="button" class="btn btn-primary btn-sm" id="cookie-accept-btn">Accept</button>
+  </div>
+</div>
+
+<script>
+  (function() {
+    var banner = document.getElementById('cookie-banner');
+    var acceptBtn = document.getElementById('cookie-accept-btn');
+    if (!banner) return;
+    if (!localStorage.getItem('codesnapper_cookie_consent')) {
+      banner.classList.remove('hidden');
+    }
+    if (acceptBtn) {
+      acceptBtn.addEventListener('click', function() {
+        localStorage.setItem('codesnapper_cookie_consent', 'accepted');
+        banner.classList.add('hidden');
+      });
+    }
+  })();
+</script>
 
 </body>
 </html>

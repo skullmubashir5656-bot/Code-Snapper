@@ -3439,3 +3439,63 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   color: #ef4444; background: rgba(239, 68, 68, 0.1);
 }
 
+/* ============================================================
+   COOKIE CONSENT BANNER
+   ============================================================ */
+.cookie-banner {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 580px;
+  width: calc(100% - 32px);
+  background: rgba(14, 18, 29, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-lg);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  z-index: 9999;
+  animation: slideUpBanner .25s ease both;
+}
+@keyframes slideUpBanner {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.cookie-banner.hidden { display: none !important; }
+.cookie-text {
+  font-size: 13.5px;
+  color: var(--txt-2);
+  line-height: 1.45;
+  margin: 0;
+}
+.cookie-text a {
+  color: var(--violet-d);
+  text-decoration: underline;
+}
+.cookie-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .cookie-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    bottom: 12px;
+  }
+  .cookie-actions {
+    width: 100%;
+  }
+  .cookie-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+

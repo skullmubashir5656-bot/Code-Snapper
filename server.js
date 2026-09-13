@@ -1734,8 +1734,8 @@ app.get(['/api/test-openrouter', '/api/test-gemini'], async (_req, res) => {
   }
 });
 
-/* ─── SPA fallback ───────────────────────────────────────────────────────── */
-app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+/* ─── 404 Custom Page ────────────────────────────────────────────────────── */
+app.use((_req, res) => res.status(404).sendFile(path.join(__dirname, '404.html')));
 
 /* ─── Startup ────────────────────────────────────────────────────────────── */
 (async () => {
