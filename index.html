@@ -45,7 +45,7 @@
 ══════════════════════════════════════ -->
 <header class="header" role="banner">
   <div class="container header-inner">
-    <!-- Left: Logo + Primary Links -->
+    <!-- Left: Logo (Purple gradient icon + Wordmark) -->
     <div class="header-left">
       <a href="index.html" class="logo" aria-label="CodeSnapper Home">
         <div class="logo-img">
@@ -53,45 +53,50 @@
         </div>
         <span class="logo-wordmark">CodeSnapper</span>
       </a>
-      <nav class="nav-links-left" role="navigation" aria-label="Main navigation">
-        <a href="index.html" class="nav-link active">Extract</a>
-        <a href="about.html" class="nav-link">About</a>
-      </nav>
     </div>
+
+    <!-- Center: Nav links (Desktop) -->
+    <nav class="nav-links-center" role="navigation" aria-label="Main navigation">
+      <a href="index.html" class="nav-link active">Extract</a>
+      <a href="about.html" class="nav-link">About</a>
+    </nav>
 
     <!-- Right: Desktop & Mobile Actions -->
     <div class="header-right">
-      <!-- Signed-out: sign-in button -->
-      <button class="btn btn-ghost btn-sm nav-signin-btn hidden" id="nav-signin-btn"
-              aria-label="Sign in to your account">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      <!-- Signed-out: Outlined purple Sign in button -->
+      <button class="nav-signin-btn hidden" id="nav-signin-btn" aria-label="Sign in to your account">
         Sign in
       </button>
 
-      <!-- Signed-in: desktop items (History icon + username & counter pill + subtle sign-out link) -->
+      <!-- Signed-in: desktop items (History icon + User pill + Sign out icon) -->
       <div class="header-auth-group hidden" id="header-auth-group">
         <button class="nav-history-icon-btn" id="nav-history-btn" title="History" aria-label="View extraction history" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
+
         <div class="user-pill" id="user-pill" role="status" aria-label="Account status">
+          <span class="user-pill-avatar" id="user-pill-avatar" aria-hidden="true">U</span>
           <span class="user-pill-email" id="user-pill-email"></span>
           <span class="user-pill-sep" aria-hidden="true">·</span>
+          <span class="user-pill-dot dot-green" id="user-pill-dot" aria-hidden="true"></span>
           <span class="user-pill-remaining" id="user-pill-remaining" title="Extractions remaining today">50/50</span>
         </div>
-        <button class="nav-signout-link" id="signout-btn" aria-label="Sign out" type="button">
-          <span>Sign out</span>
+
+        <button class="nav-signout-btn" id="signout-btn" title="Sign out" aria-label="Sign out" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </button>
       </div>
 
-      <!-- Mobile extraction counter badge (shows in top right next to hamburger when signed in) -->
+      <!-- Mobile extraction counter mini pill (top right next to hamburger when signed in) -->
       <div class="mobile-counter-pill hidden" id="mobile-counter-pill" title="Extractions remaining today">
+        <span class="mobile-counter-dot dot-green" id="mobile-counter-dot" aria-hidden="true"></span>
         <span id="mobile-counter-text">50/50</span>
       </div>
 
-      <!-- Mobile menu toggle -->
+      <!-- Mobile menu toggle button -->
       <button class="menu-toggle" id="menu-toggle-btn" aria-label="Open menu" aria-expanded="false">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+        <svg class="hamburger-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+        <svg class="close-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
   </div>
@@ -103,7 +108,7 @@
     <a href="index.html" class="mobile-nav-link active">Extract</a>
     <a href="about.html" class="mobile-nav-link">About</a>
     <button class="mobile-nav-link mobile-nav-history hidden" id="mobile-nav-history" type="button">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
       <span>History</span>
     </button>
     <a href="terms.html" class="mobile-nav-link">Terms</a>
