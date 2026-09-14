@@ -3867,15 +3867,15 @@ function bindEvents() {
             <span class="mobile-auth-rem">${rem}/50</span>
           </div>
         </div>
-        <button class="mobile-signout-btn" onclick="document.getElementById('signout-btn').click(); if (document.getElementById('mobile-nav')) document.getElementById('mobile-nav').classList.add('hidden');">
+        <button class="mobile-signout-btn" onclick="document.getElementById('signout-btn').click(); const mn = document.getElementById('mobile-nav'); if (mn) mn.classList.add('hidden'); const mb = document.getElementById('menu-toggle-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.classList.remove('open'); }">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           <span>Sign out</span>
         </button>`;
     } else {
       mobileNavAuth.innerHTML = `
-        <button class="mobile-signin-btn" onclick="document.getElementById('nav-signin-btn').click(); if (document.getElementById('mobile-nav')) document.getElementById('mobile-nav').classList.add('hidden');">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-          Sign in / Create account
+        <button class="mobile-signin-btn" onclick="document.getElementById('nav-signin-btn').click(); const mn = document.getElementById('mobile-nav'); if (mn) mn.classList.add('hidden'); const mb = document.getElementById('menu-toggle-btn'); if (mb) { mb.setAttribute('aria-expanded', 'false'); mb.classList.remove('open'); }">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          Sign in
         </button>`;
     }
   };
