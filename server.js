@@ -121,6 +121,15 @@ const getGeminiToken = getOpenRouterToken;
 
 /* ─── Middleware ─────────────────────────────────────────────────────────── */
 app.use(express.json({ limit: '25mb' }));
+
+// Redirect trailing slashes
+app.use((req, res, next) => {
+  if (req.path.endsWith('/') && req.path.length > 1) {
+    return res.redirect(301, req.path.slice(0, -1));
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname)));
 
 /* ─── Persistent External Database Connection (Turso / SQLite Fallback) ────── */
