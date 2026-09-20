@@ -413,7 +413,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   flex-shrink: 0;
@@ -431,7 +431,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .user-pill-sep {
   color: rgba(255, 255, 255, 0.25);
   font-weight: 700;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 /* Extraction counter dot inside pill: green >50%, yellow 50-20%, red <20% */
@@ -837,7 +837,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .upload-divider::before, .upload-divider::after {
   content: ''; flex: 1; height: 1px; background: var(--border-2);
 }
-.upload-divider span { font-size: 11px; color: var(--txt-3); font-weight: 700; text-transform: uppercase; letter-spacing: .8px; }
+.upload-divider span { font-size: 12px; color: var(--txt-3); font-weight: 700; text-transform: uppercase; letter-spacing: .8px; }
 
 .upload-shortcuts {
   display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap;
@@ -852,17 +852,29 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   font-size: 12px; color: var(--txt-2); font-weight: 500;
 }
 .kbd-tag kbd {
-  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
   background: rgba(167,139,250,.15); padding: 1px 6px;
   border-radius: 4px; color: var(--violet-d); font-weight: 700;
 }
 
-/* Tap to browse fallback button (especially on mobile) */
-.tap-to-browse-btn {
+/* Upload zone buttons row (Browse files + Camera Lens) */
+.upload-actions-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  position: relative;
+  z-index: 2;
+}
+
+.tap-to-browse-btn,
+.upload-camera-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 8px 18px;
   font-size: 13.5px;
   font-weight: 600;
@@ -873,7 +885,8 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   box-shadow: 0 2px 10px rgba(0,0,0,.25);
   transition: all var(--t-base);
 }
-.tap-to-browse-btn:hover {
+.tap-to-browse-btn:hover,
+.upload-camera-btn:hover {
   transform: translateY(-1px);
   border-color: var(--violet);
   background: var(--card-2);
@@ -936,7 +949,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 }
 
 /* ============================================================
-   PROMINENT CAMERA ACTION CARD
+   SECONDARY CAMERA ACTION CARD (Subtle secondary entry)
    ============================================================ */
 .camera-action-card {
   margin-top: 14px;
@@ -944,58 +957,49 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  background: linear-gradient(135deg, rgba(124,58,237,.20) 0%, rgba(99,102,241,.14) 100%);
-  border: 1.5px solid rgba(167,139,250,.45);
+  gap: 14px;
+  padding: 14px 18px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--r-xl);
   cursor: pointer;
   transition: all var(--t-base);
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 18px rgba(0,0,0,.28), 0 0 24px rgba(124,58,237,.14);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   text-align: left;
 }
 
-.camera-action-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(124,58,237,.32) 0%, rgba(99,102,241,.24) 100%);
-  opacity: 0;
-  transition: opacity var(--t-base);
-}
-
 .camera-action-card:hover {
-  border-color: var(--violet);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 26px rgba(124,58,237,.38), 0 0 32px rgba(124,58,237,.22);
-}
-.camera-action-card:hover::before {
-  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
 }
 
 .camera-action-icon-wrap {
-  width: 46px;
-  height: 46px;
-  border-radius: var(--r-lg);
-  background: var(--g-brand);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-  box-shadow: 0 4px 12px rgba(124,58,237,.45);
+  box-shadow: none;
   transition: transform var(--t-spring);
 }
 .camera-action-card:hover .camera-action-icon-wrap {
-  transform: scale(1.08) rotate(-4deg);
+  transform: scale(1.05);
+  border-color: rgba(167, 139, 250, 0.3);
 }
 .camera-action-icon-wrap svg {
-  width: 22px;
-  height: 22px;
-  color: #ffffff;
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
 }
 
 .camera-action-content {
@@ -1008,29 +1012,29 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   flex-wrap: wrap;
 }
 .camera-action-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #ffffff;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--txt);
   letter-spacing: -0.01em;
 }
 .camera-action-badge {
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  padding: 2px 8px;
+  letter-spacing: 0.6px;
+  padding: 2px 7px;
   border-radius: var(--r-full);
-  background: rgba(34,201,138,.16);
-  border: 1px solid rgba(34,201,138,.45);
-  color: #34d399;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--txt-2);
 }
 .camera-action-sub {
   font-size: 13px;
-  color: #cbd5e1;
+  color: var(--txt-3);
   font-weight: 500;
   line-height: 1.4;
   margin: 0;
@@ -1039,10 +1043,10 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .camera-action-arrow {
   position: relative;
   z-index: 1;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: rgba(255,255,255,.07);
+  background: rgba(255, 255, 255, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1050,14 +1054,14 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   transition: transform var(--t-spring), background var(--t-base);
 }
 .camera-action-arrow svg {
-  width: 16px;
-  height: 16px;
-  color: var(--violet-d);
+  width: 14px;
+  height: 14px;
+  color: var(--txt-3);
   transition: color var(--t-base);
 }
 .camera-action-card:hover .camera-action-arrow {
-  transform: translateX(3px);
-  background: rgba(124,58,237,.35);
+  transform: translateX(2px);
+  background: rgba(255, 255, 255, 0.08);
 }
 .camera-action-card:hover .camera-action-arrow svg {
   color: #ffffff;
@@ -1075,7 +1079,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   background: rgba(255,255,255,.05);
   border: 1px solid rgba(255,255,255,.14);
   color: #f1f5f9;
-  font-size: 12.5px; font-weight: 600;
+  font-size: 13.5px; font-weight: 600;
   box-shadow: 0 2px 8px rgba(0,0,0,.35);
   white-space: nowrap;
   transition: all var(--t-base);
@@ -1229,7 +1233,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
    ============================================================ */
 .sec-header { margin-bottom: 28px; }
 .sec-label {
-  font-size: 11px; font-weight: 700; letter-spacing: 1.2px;
+  font-size: 12px; font-weight: 700; letter-spacing: 1.2px;
   text-transform: uppercase; color: var(--violet-d); margin-bottom: 6px;
 }
 .sec-title {
@@ -1288,7 +1292,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .crop-card-badge {
   display: inline-flex; align-items: center;
   padding: 2px 9px; border-radius: var(--r-full);
-  font-size: 11px; font-weight: 600;
+  font-size: 12px; font-weight: 600;
   margin-bottom: 10px; position: relative; z-index: 1;
 }
 .badge-rec {
@@ -1387,7 +1391,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   background: rgba(15, 23, 42, 0.85);
   border: 1px solid rgba(167, 139, 250, 0.4);
   color: var(--violet-d);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   font-family: 'JetBrains Mono', monospace;
   padding: 2px 7px;
@@ -1439,7 +1443,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   text-overflow: ellipsis;
 }
 .batch-card-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--txt-3);
   font-family: 'JetBrains Mono', monospace;
 }
@@ -1514,7 +1518,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   gap: 8px;
 }
 .batch-proc-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -1630,7 +1634,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   color: #fff;
 }
 .batch-tab-badge {
-  font-size: 11px;
+  font-size: 12px;
   padding: 1px 6px;
   border-radius: var(--r-full);
   font-weight: 700;
@@ -2164,7 +2168,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   margin: 0;
 }
 .camera-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
@@ -2331,7 +2335,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 }
 
 .camera-counter-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.3px;
   padding: 3px 10px;
@@ -2348,20 +2352,15 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   width: 100%;
   background: rgba(13, 17, 23, 0.7);
   border: 1px solid var(--border-2);
-  border-radius: var(--r-lg);
-  padding: 8px 10px;
-  box-sizing: border-box;
+  border-radius: var(--r-xl);
+  padding: 12px 16px;
+  margin-bottom: 12px;
 }
 .camera-strip-scroll {
   display: flex;
-  gap: 10px;
+  align-items: center;
+  gap: 12px;
   overflow-x: auto;
-  overflow-y: hidden;
-  padding: 2px 2px 4px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-2) transparent;
-  scroll-behavior: smooth;
-}
 .camera-strip-scroll::-webkit-scrollbar {
   height: 4px;
 }
@@ -2636,10 +2635,10 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 
 .about-section { margin-bottom: 56px; }
 .about-sec-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px;
+  font-size: 12px; font-weight: 700; letter-spacing: 1.5px;
   text-transform: uppercase; color: var(--violet-d); margin-bottom: 12px;
 }
-.about-sec-title { font-size: 26px; font-weight: 800; letter-spacing: -.03em; margin-bottom: 16px; }
+.about-sec-title { font-size: 26px; font-weight: 800; letter-spacing: -.03em; margin-bottom: 24px; }
 .about-body {
   color: var(--txt-2); font-size: 15.5px; line-height: 1.8;
 }
@@ -2647,7 +2646,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .about-body p:last-child { margin-bottom: 0; }
 
 /* Steps */
-.flow-steps { display: flex; flex-direction: column; gap: 16px; margin: 24px 0; }
+.flow-steps { display: flex; flex-direction: column; gap: 16px; margin: 28px 0; }
 .flow-step {
   display: flex; gap: 16px; align-items: flex-start;
   padding: 18px 20px;
@@ -2683,11 +2682,23 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .caution-head strong { font-size: 16px; font-weight: 700; color: var(--warning); }
 .caution-body { font-size: 14px; color: var(--txt-2); line-height: 1.7; font-weight: 500; }
 
-/* Privacy grid */
-.privacy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 24px 0; }
+/* Privacy grid — Equal-height cards in 2x2 grid */
+.privacy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  gap: 14px;
+  margin: 24px 0;
+}
 .priv-card {
-  padding: 20px; border-radius: var(--r-lg);
-  background: var(--card); border: 1px solid var(--border);
+  padding: 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  border: 1px solid var(--border);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 .priv-icon {
   width: 36px; height: 36px; border-radius: var(--r-sm);
@@ -3395,7 +3406,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
     border: none !important;
   }
   .camera-tip-item {
-    font-size: 11px !important;
+    font-size: 12px !important;
     padding: 4px 10px !important;
     background: rgba(0, 0, 0, 0.6) !important;
     backdrop-filter: blur(8px) !important;
@@ -3656,7 +3667,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   border-radius: var(--r-full);
   transition: width .35s ease, background .35s ease;
 }
-.pw-strength-lbl { font-size: 11px; font-weight: 700; min-width: 48px; }
+.pw-strength-lbl { font-size: 12px; font-weight: 700; min-width: 48px; }
 
 /* ============================================================
    USER PILL (header — signed-in state)
@@ -3789,7 +3800,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .history-count-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 20px; height: 20px; padding: 0 6px;
-  border-radius: 99px; font-size: 11px; font-weight: 700;
+  border-radius: 99px; font-size: 12px; font-weight: 700;
   background: rgba(124, 58, 237, 0.25);
   border: 1px solid rgba(167, 139, 250, 0.4);
   color: var(--violet-d);
@@ -3954,7 +3965,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
 .history-lang-badge {
   display: inline-flex; align-items: center;
   padding: 2px 8px; border-radius: 4px;
-  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600;
   background: rgba(124, 58, 237, 0.15); border: 1px solid rgba(167, 139, 250, 0.35);
   color: var(--violet-d); text-transform: capitalize;
 }

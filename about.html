@@ -59,7 +59,7 @@
 
     <!-- Right: Action -->
     <div class="header-right">
-      <a href="index.html" class="nav-signin-btn">Try It Free</a>
+      <a href="index.html" class="nav-signin-btn-solid" style="background:#7c3aed;color:#ffffff;border:none;padding:7px 16px;font-size:13.5px;font-weight:600;border-radius:var(--r-md);text-decoration:none;display:inline-flex;align-items:center;box-shadow:0 2px 10px rgba(124,58,237,.35)">Try It Free</a>
     </div>
   </div>
 </header>
@@ -164,7 +164,7 @@
     <div class="caution-box" role="note" aria-label="Important accuracy warning">
       <div class="caution-head">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <strong>⚠ Always reverify against the original image before use</strong>
+        <strong>Always reverify against the original image before use</strong>
       </div>
       <p class="caution-body">
         CodeSnapper is a convenience tool, not a guaranteed transcription service. AI vision models can misread characters — especially in low-resolution images, unusual fonts, or compressed screenshots. Common confusion pairs include:
@@ -211,13 +211,13 @@
     <h2 class="about-sec-title" id="why-llm-title">Why a Vision LLM — not OCR?</h2>
     <div class="about-body">
       <p>
-        Traditional OCR engines (Tesseract, AWS Textract, etc.) treat code as generic text. They struggle with the unique density and character-level ambiguity of source code — they don't understand that <code style="color:var(--violet-d)">!=</code> is a single operator, or that indentation is semantically meaningful, or that a <code style="color:var(--violet-d)">//</code> in C++ differs from a <code style="color:var(--violet-d)">#</code> in Python.
+        <strong>Traditional OCR Treats Code as Generic Text:</strong> Legacy engines (such as Tesseract or AWS Textract) struggle with the dense formatting and character ambiguities of programming languages. They don't recognize compound operators like <code style="color:var(--violet-d)">!=</code>, fail to preserve semantic indentation, and misinterpret language-specific syntax like <code style="color:var(--violet-d)">//</code> versus <code style="color:var(--violet-d)">#</code>.
       </p>
       <p>
-        Google Gemini 3.6 Flash is a multimodal LLM trained on enormous amounts of code across many programming languages. It "understands" code at a syntactic level — it knows what's plausible for a given language, can disambiguate characters based on context, and handles unusual code layouts that would trip up traditional OCR.
+        <strong>Vision LLMs Understand Syntax &amp; Context:</strong> Multimodal AI models are trained on billions of lines of real code across dozens of languages. Gemini "understands" syntactical structure — it recognizes valid language keywords, accurately resolves ambiguous characters based on grammar, and handles complex editor themes and layouts that trip up traditional OCR.
       </p>
       <p>
-        The tradeoff: an LLM <em>could</em> hallucinate content it didn't see. This is why CodeSnapper uses an extremely strict prompt at near-zero temperature, and why we strongly recommend verifying all extracted code. We pick accuracy and context-awareness over false confidence.
+        <strong>Surgical Prompts &amp; Near-Zero Temperature:</strong> To eliminate hallucination risks, CodeSnapper runs strictly constrained transcription prompts at near-zero temperature (0.05). We prioritize strict fidelity to what's visually present, flagging any uncertain characters clearly in the output.
       </p>
     </div>
   </section>

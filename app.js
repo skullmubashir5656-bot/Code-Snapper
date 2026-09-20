@@ -83,6 +83,7 @@ const els = {
   uploadArea:           $('upload-area'),
   fileInput:            $('file-input'),
   tapToBrowseBtn:       $('tap-to-browse-btn'),
+  uploadCameraBtn:      $('upload-camera-btn'),
   serverStatusBanner:   $('server-status-banner'),
   serverStatusMsg:      $('server-status-msg'),
   serverStatusRetryBtn: $('server-status-retry-btn'),
@@ -3909,8 +3910,8 @@ function bindEvents() {
 
   /* ── Upload area ── */
   els.uploadArea.addEventListener('click', e => {
-    // If the click originated from or inside the camera button, don't open the standard file input
-    if (e.target.closest('#open-camera-btn')) return;
+    // If the click originated from or inside the camera buttons, don't open the standard file input
+    if (e.target.closest('#open-camera-btn') || e.target.closest('#upload-camera-btn')) return;
     els.fileInput.click();
   });
   if (els.tapToBrowseBtn) {
@@ -3920,9 +3921,16 @@ function bindEvents() {
       els.fileInput.click();
     });
   }
+  if (els.uploadCameraBtn) {
+    els.uploadCameraBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      e.preventDefault();
+      openCameraSession();
+    });
+  }
   els.uploadArea.addEventListener('keydown', e => {
     if (e.key === 'Enter' || e.key === ' ') {
-      if (e.target.closest('#open-camera-btn')) return;
+      if (e.target.closest('#open-camera-btn') || e.target.closest('#upload-camera-btn')) return;
       e.preventDefault();
       els.fileInput.click();
     }
