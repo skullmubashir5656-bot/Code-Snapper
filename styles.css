@@ -2361,6 +2361,7 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   align-items: center;
   gap: 12px;
   overflow-x: auto;
+}
 .camera-strip-scroll::-webkit-scrollbar {
   height: 4px;
 }
