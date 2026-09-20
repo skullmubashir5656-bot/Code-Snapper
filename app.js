@@ -1117,7 +1117,7 @@ function updateUsageUI() {
       }
       if (heroSoftLink) {
         heroSoftLink.classList.remove('hidden');
-        heroSoftLink.style.display = 'inline';
+        heroSoftLink.style.display = 'inline-flex';
       }
       if (heroSigninBtn) {
         heroSigninBtn.classList.add('hidden');

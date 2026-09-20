@@ -882,14 +882,19 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   position: relative;
   z-index: 2;
   cursor: pointer;
-  box-shadow: 0 2px 10px rgba(0,0,0,.25);
-  transition: all var(--t-base);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  transition: all 0.2s ease;
 }
 .tap-to-browse-btn:hover,
 .upload-camera-btn:hover {
   transform: translateY(-1px);
-  border-color: var(--violet);
-  background: var(--card-2);
+  border: 1px solid rgba(124, 58, 237, 0.6);
+  background: rgba(124, 58, 237, 0.12);
+  color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 }
 
 /* Server status banner (cold-start / connectivity check) */
@@ -1145,18 +1150,25 @@ code, pre { font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospa
   color: var(--txt);
 }
 .hero-soft-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: #a78bfa;
-  text-decoration: underline;
-  font-size: 0.9rem;
-  font-weight: 400;
-  background: none;
-  border: none;
-  padding: 0;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid rgba(124, 58, 237, 0.7);
+  padding: 4px 14px;
+  border-radius: 20px;
+  background: transparent;
   cursor: pointer;
-  display: inline;
+  transition: all 0.2s ease;
+  margin-left: 4px;
 }
 .hero-soft-link:hover {
-  color: #c084fc;
+  background: rgba(124, 58, 237, 0.15);
+  border-color: #7c3aed;
+  color: #ffffff;
 }
 .hero-auth-btn {
   display: inline-flex;
