@@ -92,28 +92,36 @@
       Transparent · Private · Accurate
     </p>
     <h1 class="about-title" id="about-main-title">
-      How <span style="background:linear-gradient(135deg,#7c3aed,#4f46e5);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">CodeSnapper</span> works
+      How <span style="background:linear-gradient(135deg,#7c3aed,#4f46e5);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">CodeSnapper</span> Works
     </h1>
     <p class="about-lead">
-      CodeSnapper uses Google's Gemini Vision LLM — not traditional OCR — to transcribe source code from single screenshots, multi-image batches, and live camera snaps with surgical precision.
+      Upload a code screenshot. AI reads it. You get clean, copy-ready code — in seconds.
     </p>
+  </section>
+
+  <!-- ── THE PROBLEM ── -->
+  <section class="about-section" aria-labelledby="problem-title">
+    <p class="about-sec-label">The Challenge</p>
+    <h2 class="about-sec-title" id="problem-title">Why not just retype it?</h2>
+    <div class="about-body">
+      <p>
+        Retyping code from screenshots is slow, error-prone, and frustrating — especially with unusual fonts, syntax colors, or low-res images. Standard OCR tools treat code like generic text and fail on indentation, special characters, and language syntax.
+      </p>
+    </div>
   </section>
 
   <!-- ── HOW IT WORKS ── -->
   <section class="about-section" aria-labelledby="how-works-title">
     <p class="about-sec-label">The workflow</p>
-    <h2 class="about-sec-title" id="how-works-title">Step by step</h2>
+    <h2 class="about-sec-title" id="how-works-title">How It Works</h2>
 
     <div class="flow-steps" role="list">
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">1</div>
         <div class="step-body">
-          <h3 class="step-heading">Upload, Paste, Batch Drop, or Camera Lens</h3>
+          <h3 class="step-heading">Upload your screenshot</h3>
           <p class="step-detail">
-            <strong>Single &amp; Batch Upload:</strong> Drag &amp; drop 1 or multiple screenshots at once — up to <strong>5 images</strong> for anonymous visitors or <strong>10 images</strong> for signed-in accounts.<br>
-            <strong>Clipboard Paste:</strong> Press <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+V</kbd> / <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Cmd+V</kbd> to paste directly from your clipboard.<br>
-            <strong>File Picker:</strong> Press <kbd style="font-family:monospace;background:rgba(167,139,250,.15);padding:1px 6px;border-radius:4px;color:var(--violet-d);font-weight:700">Ctrl+O</kbd> or click "Tap to Browse Photos".<br>
-            <strong>📷 Camera Lens —</strong> Open your rear camera directly in the browser. Capture up to 5 photos (10 when signed in) in one session — perfect for long code spanning multiple pages, whiteboard sections, or projected slides. All captures process as a batch automatically.
+            Drop, paste, or use Camera Lens to capture a code image.
           </p>
         </div>
       </article>
@@ -121,10 +129,9 @@
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">2</div>
         <div class="step-body">
-          <h3 class="step-heading">Smart AI Auto Crop &amp; Drag Selection</h3>
+          <h3 class="step-heading">AI detects and extracts</h3>
           <p class="step-detail">
-            <strong>Auto Crop:</strong> Automatically analyzes pixel data to detect code block boundaries with generous padding so syntax is never truncated. In batch mode, AI Auto Crop processes every image in the queue with zero manual steps.<br>
-            <strong>Manual Crop:</strong> For complex screenshots with browser chrome or multiple code snippets, use the interactive drag-to-select tool to isolate the exact region before extraction.
+            Gemini Vision reads the code — understanding syntax, indentation, and every character.
           </p>
         </div>
       </article>
@@ -132,107 +139,22 @@
       <article class="flow-step" role="listitem">
         <div class="step-num" aria-hidden="true">3</div>
         <div class="step-body">
-          <h3 class="step-heading">Gemini Vision extracts the code</h3>
+          <h3 class="step-heading">Copy in one click</h3>
           <p class="step-detail">
-            Images are processed via <strong>Google Gemini Vision</strong> using a strictly constrained prompt instructing the AI to output <em>only</em> clean, raw source code. Exact indentation, line breaks, brackets, and every special symbol are faithfully preserved at near-zero temperature (0.05). In batch mode, images are processed sequentially to guarantee stability and prevent rate throttling.
-          </p>
-        </div>
-      </article>
-
-      <article class="flow-step" role="listitem">
-        <div class="step-num" aria-hidden="true">4</div>
-        <div class="step-body">
-          <h3 class="step-heading">Auto-detect language &amp; tabbed results</h3>
-          <p class="step-detail">
-            Highlight.js detects the programming language across 35+ languages (Python, JavaScript, TypeScript, Rust, Go, C++, Java, SQL, HTML/CSS, and more) and applies syntax highlighting client-side. For batch uploads, results are cleanly arranged into interactive numbered tabs (<code style="color:var(--violet-d)">Image 1</code>, <code style="color:var(--violet-d)">Image 2</code>, etc.).
-          </p>
-        </div>
-      </article>
-
-      <article class="flow-step" role="listitem">
-        <div class="step-num" aria-hidden="true">5</div>
-        <div class="step-body">
-          <h3 class="step-heading">One-click copy &amp; batch export</h3>
-          <p class="step-detail">
-            Copy extracted code to your clipboard with a single click. In batch mode, hit <strong>"Copy All"</strong> to export all processed snippets at once, neatly organized with comment headers (<code style="color:var(--violet-d)"># ---- Image N: filename (lang) ---- #</code>). Any character ambiguities are flagged transparently below the code window.
-          </p>
-        </div>
-      </article>
-
-      <article class="flow-step" role="listitem">
-        <div class="step-num" aria-hidden="true">6</div>
-        <div class="step-body">
-          <h3 class="step-heading">90-day Extraction History (Signed-in)</h3>
-          <p class="step-detail">
-            Signed-in users automatically get all extractions saved to their personal <strong>Extraction History</strong> (retained for 90 days, capped at 100 entries). Browse past extractions with 3-line syntax previews, click to inline-rename entries, restore code straight into the results view, or delete items on demand. Only source text is stored — uploaded screenshots are never saved.
+            Get clean, formatted code. Any uncertain characters are flagged for you to verify.
           </p>
         </div>
       </article>
     </div>
   </section>
 
-  <!-- ── ACCURACY ── -->
-  <section class="about-section" aria-labelledby="accuracy-title">
-    <p class="about-sec-label">Accuracy &amp; limitations</p>
-    <h2 class="about-sec-title" id="accuracy-title">Always verify your code</h2>
-
-    <div class="caution-box" role="note" aria-label="Important accuracy warning">
-      <div class="caution-head">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <strong>Always reverify against the original image before use</strong>
-      </div>
-      <p class="caution-body">
-        CodeSnapper is a convenience tool, not a guaranteed transcription service. AI vision models can misread characters — especially in low-resolution images, unusual fonts, or compressed screenshots. Common confusion pairs include:
-        <code style="display:inline-block;margin-top:8px;padding:6px 12px;background:rgba(245,158,11,.07);border-radius:6px;font-size:13px;color:var(--warning);letter-spacing:.5px">
-          0 ↔ O &nbsp;&nbsp; 1 ↔ l ↔ | &nbsp;&nbsp; 5 ↔ S &nbsp;&nbsp; 6 ↔ G &nbsp;&nbsp; 8 ↔ B &nbsp;&nbsp; , ↔ . &nbsp;&nbsp; ; ↔ :
-        </code>
-        <br><br>
-        When CodeSnapper detects ambiguity it shows a warning below the code listing the affected lines — but it cannot catch every case. <strong>Always open the original screenshot side-by-side and compare critical sections</strong> before running or deploying any extracted code.
-      </p>
-    </div>
-
-    <!-- Learning Tip callout -->
-    <div class="tip-callout" style="margin-top:16px" role="note" aria-label="Learning Tip">
-      <div class="tip-callout-icon" aria-hidden="true">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
-      </div>
-      <p class="tip-callout-text">
-        <strong>Tip:</strong> This tool saves you retyping, not learning. Understand the code before you use it — don't just copy-paste blind.
-      </p>
-    </div>
-
-    <div class="about-body">
-      <p>Accuracy is generally excellent for:</p>
-      <ul style="padding-left:24px;margin:10px 0 18px;display:flex;flex-direction:column;gap:6px">
-        <li>High-resolution IDE screenshots (VS Code, JetBrains, Xcode)</li>
-        <li>Terminal/console output with standard monospace fonts</li>
-        <li>Screenshots from modern websites and documentation</li>
-        <li>Code blocks photographed from printed or e-ink displays</li>
-      </ul>
-      <p>Accuracy may be reduced for:</p>
-      <ul style="padding-left:24px;margin:10px 0;display:flex;flex-direction:column;gap:6px">
-        <li>Heavily compressed JPEGs or screenshots of screenshots</li>
-        <li>Unusual or decorative code fonts</li>
-        <li>Very small font sizes (below ~10px effective size)</li>
-        <li>Images with glare, reflections, or perspective distortion</li>
-        <li>Syntax-colored code where similar hues are on similar background</li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- ── WHY VISION LLM ── -->
+  <!-- ── WHY GEMINI VISION ── -->
   <section class="about-section" aria-labelledby="why-llm-title">
     <p class="about-sec-label">Technology</p>
-    <h2 class="about-sec-title" id="why-llm-title">Why a Vision LLM — not OCR?</h2>
+    <h2 class="about-sec-title" id="why-llm-title">Why Gemini Vision AI?</h2>
     <div class="about-body">
       <p>
-        <strong>Traditional OCR Treats Code as Generic Text:</strong> Legacy engines (such as Tesseract or AWS Textract) struggle with the dense formatting and character ambiguities of programming languages. They don't recognize compound operators like <code style="color:var(--violet-d)">!=</code>, fail to preserve semantic indentation, and misinterpret language-specific syntax like <code style="color:var(--violet-d)">//</code> versus <code style="color:var(--violet-d)">#</code>.
-      </p>
-      <p>
-        <strong>Vision LLMs Understand Syntax &amp; Context:</strong> Multimodal AI models are trained on billions of lines of real code across dozens of languages. Gemini "understands" syntactical structure — it recognizes valid language keywords, accurately resolves ambiguous characters based on grammar, and handles complex editor themes and layouts that trip up traditional OCR.
-      </p>
-      <p>
-        <strong>Surgical Prompts &amp; Near-Zero Temperature:</strong> To eliminate hallucination risks, CodeSnapper runs strictly constrained transcription prompts at near-zero temperature (0.05). We prioritize strict fidelity to what's visually present, flagging any uncertain characters clearly in the output.
+        Unlike OCR, Gemini Vision understands code at a language level — it knows what's syntactically valid, disambiguates similar-looking characters by context, and handles unusual fonts and color schemes that trip up traditional tools.
       </p>
     </div>
   </section>
@@ -243,83 +165,27 @@
     <h2 class="about-sec-title" id="privacy-title">Privacy First</h2>
     <div class="about-body">
       <p>
-        CodeSnapper processes your images in real time and retains nothing. Signed-in users' extracted code is saved to personal history for 90 days for convenience, then permanently deleted.
-      </p>
-    </div>
-
-    <div class="privacy-grid" role="list" aria-label="Privacy features">
-      <div class="priv-card" role="listitem">
-        <div class="priv-icon" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <h3 class="priv-title">Transient processing</h3>
-        <p class="priv-desc">Your image is processed in volatile memory for the duration of the request and immediately discarded.</p>
-      </div>
-
-      <div class="priv-card" role="listitem">
-        <div class="priv-icon" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        </div>
-        <h3 class="priv-title">Privacy First</h3>
-        <p class="priv-desc">CodeSnapper processes your images in real time and retains nothing. Signed-in users' extracted code is saved to personal history for 90 days for convenience, then permanently deleted.</p>
-      </div>
-
-      <div class="priv-card" role="listitem">
-        <div class="priv-icon" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-        </div>
-        <h3 class="priv-title">Server-side key</h3>
-        <p class="priv-desc">The Gemini API key is stored securely on the server — never in the browser or sent over the network to you.</p>
-      </div>
-
-      <div class="priv-card" role="listitem">
-        <div class="priv-icon" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-        </div>
-        <h3 class="priv-title">Google's data policy</h3>
-        <p class="priv-desc">Image data is sent to Google Gemini per <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener noreferrer" style="color:var(--violet-d)">their API terms</a>. Free-tier API calls may be used by Google to improve models.</p>
-      </div>
-    </div>
-
-    <div class="about-body" style="margin-top:20px">
-      <p style="font-size:13px;color:var(--txt-3);font-weight:500">
-        <strong style="color:var(--txt-2)">Tip:</strong> If your screenshot contains sensitive information (API keys, passwords, proprietary code), consider using a paid Gemini API plan with data governance controls, or crop the image to include only the non-sensitive code regions before extraction.
+        Your images are never stored. If you're signed in, only the extracted code text is saved to your history — nothing else. For sensitive code (API keys, passwords), crop to the relevant region before uploading.
       </p>
     </div>
   </section>
 
-  <!-- ── FREE TIER & BATCH LIMITS ── -->
-  <section class="about-section" aria-labelledby="limits-title">
-    <p class="about-sec-label">Limits &amp; Fair Usage</p>
-    <h2 class="about-sec-title" id="limits-title">Free extractions &amp; batch limits</h2>
+  <!-- ── TIPS FOR BEST RESULTS ── -->
+  <section class="about-section" aria-labelledby="tips-title">
+    <p class="about-sec-label">Best Practices</p>
+    <h2 class="about-sec-title" id="tips-title">Tips for Best Results</h2>
     <div class="about-body">
-      <p>
-        CodeSnapper provides 25 free extractions without an account (up to <strong>5 images per batch upload</strong>). Need more capacity? Create a free account in seconds with just your email and password — signed-in users unlock <strong>50 extractions per 24 hours</strong> on a rolling window, with support for up to <strong>10 images per batch upload</strong>.
-      </p>
-      <p>
-        Limits exist to prevent automated abuse and maintain zero-latency response times for everyone. Every extraction is processed live using state-of-the-art multimodal vision AI.
-      </p>
-    </div>
-  </section>
-
-  <!-- Authors -->
-  <section class="about-section" aria-labelledby="authors-title" style="padding-top:0">
-    <p class="about-sec-label">Credits</p>
-    <h2 class="about-sec-title" id="authors-title">Built by</h2>
-    <div class="about-body">
-      <p>
-        CodeSnapper was designed and built in 2026 as a collaborative project between
-        <strong>Mubashir Shaikh</strong> (product vision &amp; direction)
-        and <strong>Claude</strong> by <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer" style="color:var(--violet-d)">Anthropic</a>
-        (AI pair programmer &amp; engineer). Every line of code, UI component, and backend
-        logic was crafted together in a single pair-programming session — a human with
-        an idea and an AI that could build it.
-      </p>
+      <ul style="padding-left:24px;margin:10px 0 18px;display:flex;flex-direction:column;gap:8px">
+        <li>Use high-resolution screenshots (VS Code, JetBrains, Xcode work great)</li>
+        <li>Avoid glare on screens when photographing code</li>
+        <li>Always verify extracted code against the original before using it</li>
+      </ul>
     </div>
   </section>
 
   <!-- CTA -->
   <div style="text-align:center;padding:40px 0 20px">
+    <p style="font-size:16px;color:var(--txt-2);margin-bottom:14px;font-weight:500">Ready to extract?</p>
     <a href="index.html" class="btn btn-primary btn-xl">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg>
       Start Extracting Code
